@@ -31,6 +31,10 @@ const PERMISSION_KEYS = {
   menus: ["dashboard", "config", "schools", "users", "audit"],
   features: [
     "dashboard_manual_play",
+    "dashboard_database_status",
+    "dashboard_open_alerts",
+    "dashboard_schools_without_schedule",
+    "dashboard_monitor_alerts",
     "config_schedule_write",
     "config_templates",
     "config_backup_export",
@@ -54,7 +58,11 @@ const ROLE_PERMISSION_DEFAULTS = {
       audit: true,
     },
     features: {
-      dashboard_manual_play: true,
+      dashboard_manual_play: false,
+      dashboard_database_status: true,
+      dashboard_open_alerts: true,
+      dashboard_schools_without_schedule: true,
+      dashboard_monitor_alerts: true,
       config_schedule_write: true,
       config_templates: true,
       config_backup_export: true,
@@ -77,6 +85,10 @@ const ROLE_PERMISSION_DEFAULTS = {
     },
     features: {
       dashboard_manual_play: true,
+      dashboard_database_status: true,
+      dashboard_open_alerts: true,
+      dashboard_schools_without_schedule: true,
+      dashboard_monitor_alerts: true,
       config_schedule_write: true,
       config_templates: true,
       config_backup_export: true,
@@ -98,7 +110,11 @@ const ROLE_PERMISSION_DEFAULTS = {
       audit: true,
     },
     features: {
-      dashboard_manual_play: false,
+      dashboard_manual_play: true,
+      dashboard_database_status: true,
+      dashboard_open_alerts: true,
+      dashboard_schools_without_schedule: true,
+      dashboard_monitor_alerts: true,
       config_schedule_write: false,
       config_templates: false,
       config_backup_export: true,
@@ -690,6 +706,23 @@ function requirePermission(permissionPath) {
     if (!req.user) return res.status(401).json({ error: "auth_required" });
     if (!hasEffectivePermission(req.user, permissionPath)) {
       return res.status(403).json({ error: "permission_denied", permission: permissionPath });
+    }
+    next();
+  };
+}
+
+function requireAnyPermission(permissionPaths) {
+  const allowedPaths = Array.isArray(permissionPaths) ? permissionPaths.filter(Boolean) : [];
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: "auth_required" });
+    const hasAny = allowedPaths.some((permissionPath) =>
+      hasEffectivePermission(req.user, permissionPath)
+    );
+    if (!hasAny) {
+      return res.status(403).json({
+        error: "permission_denied",
+        permissionAnyOf: allowedPaths,
+      });
     }
     next();
   };
@@ -1789,7 +1822,7 @@ app.delete("/api/schools/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), as
 app.get(
   "/api/schools/:id/schedule",
   authenticate,
-  requirePermission("menus.config"),
+  requireAnyPermission(["menus.config", "menus.dashboard"]),
   requireSchoolScope({ paramName: "id" }),
   async (req, res) => {
     try {
@@ -2417,7 +2450,12 @@ app.get(
   }
 );
 
-app.get("/api/alerts", authenticate, async (req, res) => {
+app.get(
+  "/api/alerts",
+  authenticate,
+  requirePermission("menus.dashboard"),
+  requireAnyPermission(["features.dashboard_open_alerts", "features.dashboard_monitor_alerts"]),
+  async (req, res) => {
   try {
     const status = req.query.status ? String(req.query.status) : null;
     const schoolIdFilter = req.query.schoolId ? toIntId(req.query.schoolId) : null;
@@ -2476,7 +2514,8 @@ app.get("/api/alerts", authenticate, async (req, res) => {
     console.error("GET /api/alerts error:", error);
     sendInternalError(res, "failed_to_list_alerts", error);
   }
-});
+  }
+);
 
 app.patch("/api/alerts/:id/resolve", authenticate, requireWriteAccess, async (req, res) => {
   const alertId = toIntId(req.params.id);
@@ -2588,7 +2627,12 @@ app.post("/api/monitor/playback-error", authenticate, async (req, res) => {
   }
 });
 
-app.get("/api/monitor/status", authenticate, requirePermission("menus.dashboard"), async (req, res) => {
+app.get(
+  "/api/monitor/status",
+  authenticate,
+  requirePermission("menus.dashboard"),
+  requirePermission("features.dashboard_schools_without_schedule"),
+  async (req, res) => {
   try {
     const dbStart = Date.now();
     await pool.query("SELECT 1");
@@ -2707,7 +2751,8 @@ app.get("/api/monitor/status", authenticate, requirePermission("menus.dashboard"
     console.error("GET /api/monitor/status error:", error);
     sendInternalError(res, "failed_to_get_monitor_status", error);
   }
-});
+  }
+);
 
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "api_route_not_found" });

@@ -12,6 +12,10 @@
     menus: ["dashboard", "config", "schools", "users", "audit"],
     features: [
       "dashboard_manual_play",
+      "dashboard_database_status",
+      "dashboard_open_alerts",
+      "dashboard_schools_without_schedule",
+      "dashboard_monitor_alerts",
       "config_schedule_write",
       "config_templates",
       "config_backup_export",
@@ -32,9 +36,13 @@
         schools: true,
         users: true,
         audit: true,
-      },
-      features: {
-        dashboard_manual_play: true,
+    },
+    features: {
+      dashboard_manual_play: false,
+      dashboard_database_status: true,
+      dashboard_open_alerts: true,
+      dashboard_schools_without_schedule: true,
+      dashboard_monitor_alerts: true,
         config_schedule_write: true,
         config_templates: true,
         config_backup_export: true,
@@ -57,6 +65,10 @@
       },
       features: {
         dashboard_manual_play: true,
+        dashboard_database_status: true,
+        dashboard_open_alerts: true,
+        dashboard_schools_without_schedule: true,
+        dashboard_monitor_alerts: true,
         config_schedule_write: true,
         config_templates: true,
         config_backup_export: true,
@@ -78,7 +90,11 @@
         audit: true,
       },
       features: {
-        dashboard_manual_play: false,
+        dashboard_manual_play: true,
+        dashboard_database_status: true,
+        dashboard_open_alerts: true,
+        dashboard_schools_without_schedule: true,
+        dashboard_monitor_alerts: true,
         config_schedule_write: false,
         config_templates: false,
         config_backup_export: true,
@@ -101,7 +117,11 @@
       audit: "Menu Auditoria",
     },
     features: {
-      dashboard_manual_play: "Dashboard: tocar sinal manual",
+      dashboard_manual_play: "Dashboard: tocar audio manual",
+      dashboard_database_status: "Dashboard: status do banco de dados",
+      dashboard_open_alerts: "Dashboard: total de alertas",
+      dashboard_schools_without_schedule: "Dashboard: escolas sem horario",
+      dashboard_monitor_alerts: "Dashboard: lista de alertas de monitoramento",
       config_schedule_write: "Config: editar horarios",
       config_templates: "Config: templates",
       config_backup_export: "Config: exportar backup",
@@ -115,7 +135,16 @@
     },
   };
   const PERMISSION_MENU_GROUPS = [
-    { menu: "dashboard", features: ["dashboard_manual_play"] },
+    {
+      menu: "dashboard",
+      features: [
+        "dashboard_manual_play",
+        "dashboard_database_status",
+        "dashboard_open_alerts",
+        "dashboard_schools_without_schedule",
+        "dashboard_monitor_alerts",
+      ],
+    },
     {
       menu: "config",
       features: [
@@ -156,6 +185,10 @@
   const pageEyebrow = document.getElementById("pageEyebrow");
   const pageTitle = document.getElementById("pageTitle");
   const sidebar = document.getElementById("sidebar");
+  const dashboardDatabaseCard = document.getElementById("dashboardDatabaseCard");
+  const dashboardOpenAlertsCard = document.getElementById("dashboardOpenAlertsCard");
+  const dashboardSchoolsWithoutScheduleCard = document.getElementById("dashboardSchoolsWithoutScheduleCard");
+  const dashboardMonitorAlertsCard = document.getElementById("dashboardMonitorAlertsCard");
   const dashboardDbStatus = document.getElementById("dashboardDbStatus");
   const dashboardDbLatency = document.getElementById("dashboardDbLatency");
   const dashboardOpenAlerts = document.getElementById("dashboardOpenAlerts");
@@ -327,6 +360,22 @@
 
   function canAccessSchoolsMenu() {
     return isSuperAdmin() && hasPermission("menus.schools");
+  }
+
+  function canViewDashboardDatabaseStatus() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_database_status");
+  }
+
+  function canViewDashboardOpenAlerts() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_open_alerts");
+  }
+
+  function canViewDashboardSchoolsWithoutSchedule() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_schools_without_schedule");
+  }
+
+  function canViewDashboardMonitorAlerts() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_monitor_alerts");
   }
 
   function canUseTemplates() {
@@ -698,6 +747,21 @@
     }
     if (navAudits) {
       navAudits.classList.toggle("hidden", !canViewAuditLogs());
+    }
+    if (dashboardDatabaseCard) {
+      dashboardDatabaseCard.classList.toggle("hidden", !canViewDashboardDatabaseStatus());
+    }
+    if (dashboardOpenAlertsCard) {
+      dashboardOpenAlertsCard.classList.toggle("hidden", !canViewDashboardOpenAlerts());
+    }
+    if (dashboardSchoolsWithoutScheduleCard) {
+      dashboardSchoolsWithoutScheduleCard.classList.toggle(
+        "hidden",
+        !canViewDashboardSchoolsWithoutSchedule()
+      );
+    }
+    if (dashboardMonitorAlertsCard) {
+      dashboardMonitorAlertsCard.classList.toggle("hidden", !canViewDashboardMonitorAlerts());
     }
 
     if (schoolBtn) {
@@ -2060,65 +2124,98 @@
   async function loadDashboardMonitorInfo() {
     if (!dashboardDbStatus || !dashboardDbLatency || !dashboardOpenAlerts || !dashboardAlertList) return;
 
-    try {
-      const healthRes = await fetch(`${API_BASE}/health`);
-      if (!healthRes.ok) throw new Error("health-check-failed");
-      const health = await healthRes.json();
-      const dbStatus = health?.database?.status === "up" ? "Banco online" : "Banco indisponivel";
-      dashboardDbStatus.textContent = dbStatus;
-      dashboardDbStatus.className =
-        health?.database?.status === "up"
-          ? "mt-2 text-xl font-extrabold text-emerald-600"
-          : "mt-2 text-xl font-extrabold text-rose-600";
-      const latency = Number.isFinite(health?.database?.latencyMs)
-        ? `${health.database.latencyMs} ms`
-        : "--";
-      dashboardDbLatency.textContent = `Latencia: ${latency}`;
-    } catch (_error) {
-      dashboardDbStatus.textContent = "Banco indisponivel";
-      dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-rose-600";
+    const canSeeDb = canViewDashboardDatabaseStatus();
+    const canSeeOpenAlerts = canViewDashboardOpenAlerts();
+    const canSeeWithoutSchedule = canViewDashboardSchoolsWithoutSchedule();
+    const canSeeMonitorAlerts = canViewDashboardMonitorAlerts();
+    const shouldFetchAlerts = canSeeOpenAlerts || canSeeMonitorAlerts;
+    const shouldFetchMonitor = canSeeWithoutSchedule;
+
+    if (!canSeeDb) {
+      dashboardDbStatus.textContent = "--";
+      dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-slate-500";
       dashboardDbLatency.textContent = "Latencia: --";
+    } else {
+      try {
+        const healthRes = await fetch(`${API_BASE}/health`);
+        if (!healthRes.ok) throw new Error("health-check-failed");
+        const health = await healthRes.json();
+        const dbStatus = health?.database?.status === "up" ? "Banco online" : "Banco indisponivel";
+        dashboardDbStatus.textContent = dbStatus;
+        dashboardDbStatus.className =
+          health?.database?.status === "up"
+            ? "mt-2 text-xl font-extrabold text-emerald-600"
+            : "mt-2 text-xl font-extrabold text-rose-600";
+        const latency = Number.isFinite(health?.database?.latencyMs)
+          ? `${health.database.latencyMs} ms`
+          : "--";
+        dashboardDbLatency.textContent = `Latencia: ${latency}`;
+      } catch (_error) {
+        dashboardDbStatus.textContent = "Banco indisponivel";
+        dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-rose-600";
+        dashboardDbLatency.textContent = "Latencia: --";
+      }
     }
 
     if (!currentUser) {
       dashboardOpenAlerts.textContent = "--";
       dashboardSchoolsWithoutSchedule.textContent = "--";
       dashboardMonitorCheckedAt.textContent = "Ultima verificacao: --";
-      dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Faca login para visualizar alertas.</li>`;
+      if (canSeeMonitorAlerts) {
+        dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Faca login para visualizar alertas.</li>`;
+      } else {
+        dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
+      }
       return;
     }
 
     try {
       const [monitorRes, alertsRes] = await Promise.all([
-        apiFetch(`${API_BASE}/monitor/status`),
-        apiFetch(`${API_BASE}/alerts?status=open`),
+        shouldFetchMonitor ? apiFetch(`${API_BASE}/monitor/status`) : Promise.resolve(null),
+        shouldFetchAlerts ? apiFetch(`${API_BASE}/alerts?status=open`) : Promise.resolve(null),
       ]);
 
       let monitorPayload = null;
-      if (monitorRes.ok) {
+      if (monitorRes && monitorRes.ok) {
         monitorPayload = await monitorRes.json();
       }
 
       let alerts = [];
-      if (alertsRes.ok) {
+      if (alertsRes && alertsRes.ok) {
         const data = await alertsRes.json();
         alerts = Array.isArray(data) ? data : [];
       }
 
-      dashboardOpenAlerts.textContent = String(alerts.length);
-      const withoutScheduleValue = Number.isFinite(monitorPayload?.schoolsWithoutSchedule)
-        ? monitorPayload.schoolsWithoutSchedule
-        : alerts.filter((item) => item.type === "school_without_schedule").length;
-      if (dashboardSchoolsWithoutSchedule) {
-        dashboardSchoolsWithoutSchedule.textContent = String(withoutScheduleValue);
-      }
-      if (dashboardMonitorCheckedAt) {
-        const checkedAt = monitorPayload?.checkedAt
-          ? new Date(monitorPayload.checkedAt).toLocaleString("pt-BR")
-          : new Date().toLocaleString("pt-BR");
-        dashboardMonitorCheckedAt.textContent = `Ultima verificacao: ${checkedAt}`;
+      if (canSeeOpenAlerts) {
+        dashboardOpenAlerts.textContent = String(alerts.length);
+      } else {
+        dashboardOpenAlerts.textContent = "--";
       }
 
+      if (canSeeWithoutSchedule && dashboardSchoolsWithoutSchedule) {
+        const withoutScheduleValue = Number.isFinite(monitorPayload?.schoolsWithoutSchedule)
+          ? monitorPayload.schoolsWithoutSchedule
+          : alerts.filter((item) => item.type === "school_without_schedule").length;
+        dashboardSchoolsWithoutSchedule.textContent = String(withoutScheduleValue);
+      } else if (dashboardSchoolsWithoutSchedule) {
+        dashboardSchoolsWithoutSchedule.textContent = "--";
+      }
+
+      if (dashboardMonitorCheckedAt) {
+        if (canSeeWithoutSchedule) {
+          const checkedAt = monitorPayload?.checkedAt
+            ? new Date(monitorPayload.checkedAt).toLocaleString("pt-BR")
+            : new Date().toLocaleString("pt-BR");
+          dashboardMonitorCheckedAt.textContent = `Ultima verificacao: ${checkedAt}`;
+        } else {
+          dashboardMonitorCheckedAt.textContent = "Ultima verificacao: --";
+        }
+      }
+
+      if (!canSeeMonitorAlerts) {
+        dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
+        return;
+      }
       if (!alerts.length) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-emerald-100 px-3 py-2 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Nenhum alerta aberto.</li>`;
         return;
@@ -2139,7 +2236,18 @@
       });
     } catch (error) {
       console.error("Erro ao carregar monitoramento do dashboard:", error);
-      dashboardAlertList.innerHTML = `<li class="rounded-xl bg-rose-100 px-3 py-2 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Erro ao carregar alertas.</li>`;
+      if (canSeeOpenAlerts) {
+        dashboardOpenAlerts.textContent = "--";
+      }
+      if (canSeeWithoutSchedule) {
+        dashboardSchoolsWithoutSchedule.textContent = "--";
+        dashboardMonitorCheckedAt.textContent = "Ultima verificacao: --";
+      }
+      if (canSeeMonitorAlerts) {
+        dashboardAlertList.innerHTML = `<li class="rounded-xl bg-rose-100 px-3 py-2 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Erro ao carregar alertas.</li>`;
+      } else {
+        dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
+      }
     }
   }
 

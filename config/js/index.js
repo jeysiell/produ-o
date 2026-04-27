@@ -65,7 +65,7 @@ function applyDashboardPermissions(user) {
     if (effective && typeof effective === "object") {
       return Boolean(effective?.menus?.dashboard) && Boolean(effective?.features?.dashboard_manual_play);
     }
-    return user.role !== ROLE_SOMENTE_LEITURA;
+    return false;
   })();
 
   manualBtn.disabled = !hasManualPermission;
