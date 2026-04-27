@@ -8,8 +8,10 @@ let countdownInterval = null;
 
 const API_BASE = "/api";
 const AUTH_TOKEN_STORAGE_KEY = "authToken";
+const AUTH_USER_STORAGE_KEY = "authUser";
 const CURRENT_SCHOOL_STORAGE_KEY = "currentSchoolId";
 const PERIODS = ["morning", "afternoon", "afternoonFriday"];
+const ROLE_SOMENTE_LEITURA = "somente_leitura";
 
 function getAuthToken() {
   if (typeof window.getAuthToken === "function") {
@@ -40,6 +42,35 @@ function getCurrentSchoolId() {
     return window.getCurrentSchoolId() || "";
   }
   return localStorage.getItem(CURRENT_SCHOOL_STORAGE_KEY) || "";
+}
+
+function getAuthUser() {
+  try {
+    const raw = localStorage.getItem(AUTH_USER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function applyDashboardPermissions(user) {
+  const manualBtn = document.getElementById("btnManualPlay");
+  if (!manualBtn) return;
+
+  const hasManualPermission = (() => {
+    if (!user) return false;
+    const effective = user.effectivePermissions;
+    if (effective && typeof effective === "object") {
+      return Boolean(effective?.menus?.dashboard) && Boolean(effective?.features?.dashboard_manual_play);
+    }
+    return user.role !== ROLE_SOMENTE_LEITURA;
+  })();
+
+  manualBtn.disabled = !hasManualPermission;
+  manualBtn.classList.toggle("opacity-50", !hasManualPermission);
+  manualBtn.classList.toggle("cursor-not-allowed", !hasManualPermission);
 }
 
 function clearTimers() {
@@ -506,6 +537,7 @@ document
 document.addEventListener("DOMContentLoaded", async () => {
   await wakeUpAPI();
   currentPeriod = PERIODS.includes(detectCurrentPeriod()) ? detectCurrentPeriod() : "morning";
+  applyDashboardPermissions(getAuthUser());
   if (getAuthToken()) {
     await loadSchedule();
   } else {
@@ -536,8 +568,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   window.addEventListener("auth:changed", (event) => {
     if (event?.detail?.authenticated) {
+      applyDashboardPermissions(event?.detail?.user || getAuthUser());
       loadSchedule();
     } else {
+      applyDashboardPermissions(null);
       resetDashboardState();
     }
   });

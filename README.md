@@ -36,9 +36,12 @@ Aplicacao: `http://localhost:3000`
 ### Auth
 - `POST /api/auth/login`
 - `GET /api/auth/me`
-- `GET /api/auth/users` (superadmin)
-- `POST /api/auth/users` (superadmin)
-- `PATCH /api/auth/users/:id` (superadmin)
+- `POST /api/auth/change-password` (self-service)
+- `GET /api/auth/users` (superadmin/admin_escola)
+- `POST /api/auth/users` (superadmin/admin_escola, com escopo)
+- `PATCH /api/auth/users/:id` (superadmin/admin_escola, com escopo)
+- `DELETE /api/auth/users/:id` (soft delete/desativacao)
+- `POST /api/auth/users/:id/reset-password` (superadmin)
 
 ### Escolas e horarios
 - `GET /api/schools`
@@ -56,13 +59,17 @@ Aplicacao: `http://localhost:3000`
 ### Backup / restore
 - `GET /api/schools/:id/backup`
 - `POST /api/schools/:id/restore`
+- `GET /api/schools/:id/backups` (historico automatico/manual)
+- `GET /api/schools/:id/backups/:backupId` (preview)
+- `POST /api/schools/:id/restore-backup` (restaura snapshot selecionado)
 
 ### Auditoria / alertas / monitoramento
-- `GET /api/audit-logs`
+- `GET /api/audit-logs` (filtros: `schoolId`, `userId`, `action`, `from`, `to`)
 - `GET /api/alerts`
 - `PATCH /api/alerts/:id/resolve`
 - `POST /api/monitor/playback-error`
-- `GET /api/monitor/status` (superadmin)
+- `GET /api/monitor/status` (global para superadmin, escopo escola para demais)
+- `GET /api/health` (status da API + banco)
 
 ## Troubleshooting
 

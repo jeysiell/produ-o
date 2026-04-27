@@ -15,6 +15,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-change-this-secret";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
 const MONITOR_INTERVAL_MS = Number(process.env.MONITOR_INTERVAL_MS) || 300000;
+const DAILY_BACKUP_INTERVAL_MS = Number(process.env.DAILY_BACKUP_INTERVAL_MS) || 86400000;
 const DEFAULT_ADMIN_EMAIL = process.env.DEFAULT_ADMIN_EMAIL || "admin@sinaltech.local";
 const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123456";
 const DEFAULT_ADMIN_NAME = process.env.DEFAULT_ADMIN_NAME || "Super Admin";
@@ -25,6 +26,92 @@ const ROLE_SOMENTE_LEITURA = "somente_leitura";
 const ALL_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA, ROLE_SOMENTE_LEITURA];
 const WRITE_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA];
 const PERIODS = ["morning", "afternoon", "afternoonFriday"];
+
+const PERMISSION_KEYS = {
+  menus: ["dashboard", "config", "schools", "users", "audit"],
+  features: [
+    "dashboard_manual_play",
+    "config_schedule_write",
+    "config_templates",
+    "config_backup_export",
+    "config_backup_import",
+    "config_backup_restore",
+    "users_create",
+    "users_edit",
+    "users_disable",
+    "users_reset_password",
+    "audit_view",
+  ],
+};
+
+const ROLE_PERMISSION_DEFAULTS = {
+  [ROLE_SUPERADMIN]: {
+    menus: {
+      dashboard: true,
+      config: true,
+      schools: true,
+      users: true,
+      audit: true,
+    },
+    features: {
+      dashboard_manual_play: true,
+      config_schedule_write: true,
+      config_templates: true,
+      config_backup_export: true,
+      config_backup_import: true,
+      config_backup_restore: true,
+      users_create: true,
+      users_edit: true,
+      users_disable: true,
+      users_reset_password: true,
+      audit_view: true,
+    },
+  },
+  [ROLE_ADMIN_ESCOLA]: {
+    menus: {
+      dashboard: true,
+      config: true,
+      schools: false,
+      users: true,
+      audit: true,
+    },
+    features: {
+      dashboard_manual_play: true,
+      config_schedule_write: true,
+      config_templates: true,
+      config_backup_export: true,
+      config_backup_import: true,
+      config_backup_restore: true,
+      users_create: true,
+      users_edit: true,
+      users_disable: true,
+      users_reset_password: false,
+      audit_view: true,
+    },
+  },
+  [ROLE_SOMENTE_LEITURA]: {
+    menus: {
+      dashboard: true,
+      config: true,
+      schools: false,
+      users: false,
+      audit: true,
+    },
+    features: {
+      dashboard_manual_play: false,
+      config_schedule_write: false,
+      config_templates: false,
+      config_backup_export: true,
+      config_backup_import: false,
+      config_backup_restore: false,
+      users_create: false,
+      users_edit: false,
+      users_disable: false,
+      users_reset_password: false,
+      audit_view: true,
+    },
+  },
+};
 
 function buildDatabaseUrlFromParts() {
   const host = process.env.DB_HOST;
@@ -143,7 +230,99 @@ function normalizeTime(value) {
   return match ? match[1] : text;
 }
 
+function buildEmptyPermissions() {
+  return {
+    menus: Object.fromEntries(PERMISSION_KEYS.menus.map((key) => [key, false])),
+    features: Object.fromEntries(PERMISSION_KEYS.features.map((key) => [key, false])),
+  };
+}
+
+function normalizePermissionsPayload(rawPermissions, options = {}) {
+  const includeAllKeys = options.includeAllKeys === true;
+  const normalized = includeAllKeys ? buildEmptyPermissions() : { menus: {}, features: {} };
+  if (!rawPermissions || typeof rawPermissions !== "object") return normalized;
+
+  const rawMenus =
+    rawPermissions.menus && typeof rawPermissions.menus === "object" ? rawPermissions.menus : {};
+  const rawFeatures =
+    rawPermissions.features && typeof rawPermissions.features === "object"
+      ? rawPermissions.features
+      : {};
+
+  PERMISSION_KEYS.menus.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(rawMenus, key)) {
+      normalized.menus[key] = Boolean(rawMenus[key]);
+    }
+  });
+
+  PERMISSION_KEYS.features.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(rawFeatures, key)) {
+      normalized.features[key] = Boolean(rawFeatures[key]);
+    }
+  });
+
+  return normalized;
+}
+
+function getRoleDefaultPermissions(role) {
+  const defaults = ROLE_PERMISSION_DEFAULTS[role] || buildEmptyPermissions();
+  return {
+    menus: { ...defaults.menus },
+    features: { ...defaults.features },
+  };
+}
+
+function getEffectivePermissions(role, customPermissions) {
+  const defaults = getRoleDefaultPermissions(role);
+  const normalizedCustom = normalizePermissionsPayload(customPermissions);
+  const effective = buildEmptyPermissions();
+
+  PERMISSION_KEYS.menus.forEach((key) => {
+    const allowByRole = Boolean(defaults.menus[key]);
+    const explicit = normalizedCustom.menus[key];
+    effective.menus[key] = allowByRole ? explicit !== false : false;
+  });
+
+  PERMISSION_KEYS.features.forEach((key) => {
+    const allowByRole = Boolean(defaults.features[key]);
+    const explicit = normalizedCustom.features[key];
+    effective.features[key] = allowByRole ? explicit !== false : false;
+  });
+
+  return effective;
+}
+
+function hasEffectivePermission(user, permissionPath) {
+  const [section, key] = String(permissionPath || "").split(".");
+  if (!section || !key) return false;
+
+  const effective = getEffectivePermissions(user?.role, user?.permissions);
+  if (section === "menus") return Boolean(effective.menus[key]);
+  if (section === "features") return Boolean(effective.features[key]);
+  return false;
+}
+
+function parseDateFilter(value, options = {}) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(text);
+  let parsed;
+  if (isDateOnly) {
+    parsed = new Date(`${text}T00:00:00.000Z`);
+    if (options.endOfDay) {
+      parsed = new Date(`${text}T23:59:59.999Z`);
+    }
+  } else {
+    parsed = new Date(text);
+  }
+
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
 function sanitizeUser(row) {
+  const permissions = normalizePermissionsPayload(row.permissions);
   return {
     id: row.id,
     name: row.name,
@@ -151,6 +330,8 @@ function sanitizeUser(row) {
     role: row.role,
     schoolId: row.school_id || null,
     schoolName: row.school_name || null,
+    permissions,
+    effectivePermissions: getEffectivePermissions(row.role, permissions),
     active: row.active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -327,6 +508,102 @@ async function replaceSchoolSchedule(client, schoolId, scheduleObject) {
   }
 }
 
+function summarizeSchedule(scheduleObject) {
+  const safe = scheduleObject && typeof scheduleObject === "object" ? scheduleObject : {};
+  return {
+    morning: Array.isArray(safe.morning) ? safe.morning.length : 0,
+    afternoon: Array.isArray(safe.afternoon) ? safe.afternoon.length : 0,
+    afternoonFriday: Array.isArray(safe.afternoonFriday) ? safe.afternoonFriday.length : 0,
+  };
+}
+
+async function saveSchoolBackupSnapshot(client, options) {
+  const trigger = String(options?.trigger || "manual").trim() || "manual";
+  const schoolId = toIntId(options?.schoolId);
+  if (!schoolId) throw new Error("invalid_school_id_for_backup");
+
+  if (trigger === "daily" && options?.skipIfAlreadyToday) {
+    const existing = await client.query(
+      `
+      SELECT id
+      FROM school_backups
+      WHERE school_id = $1
+        AND trigger = 'daily'
+        AND created_at::date = CURRENT_DATE
+      LIMIT 1
+      `,
+      [schoolId]
+    );
+    if (existing.rowCount) return null;
+  }
+
+  const schedule = options?.schedule || (await getScheduleObjectBySchoolId(client, schoolId));
+  const metadata =
+    options?.metadata && typeof options.metadata === "object" ? options.metadata : null;
+
+  const result = await client.query(
+    `
+    INSERT INTO school_backups (school_id, schedule, metadata, created_by, trigger)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING id, school_id, schedule, metadata, created_by, trigger, created_at
+    `,
+    [
+      schoolId,
+      JSON.stringify(schedule),
+      metadata ? JSON.stringify(metadata) : null,
+      options?.createdBy || null,
+      trigger,
+    ]
+  );
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    schoolId: row.school_id,
+    schedule: row.schedule,
+    metadata: row.metadata,
+    createdBy: row.created_by,
+    trigger: row.trigger,
+    createdAt: row.created_at,
+    summary: summarizeSchedule(row.schedule),
+  };
+}
+
+async function runDailyBackupSweep(trigger = "daily", actorUserId = null) {
+  const client = await pool.connect();
+  try {
+    const schools = await client.query(
+      `
+      SELECT id
+      FROM schools
+      WHERE active = TRUE
+      ORDER BY id ASC
+      `
+    );
+
+    let created = 0;
+    for (const school of schools.rows) {
+      const snapshot = await saveSchoolBackupSnapshot(client, {
+        schoolId: school.id,
+        trigger,
+        createdBy: actorUserId,
+        metadata: { source: "scheduler" },
+        skipIfAlreadyToday: trigger === "daily",
+      });
+      if (snapshot) created += 1;
+    }
+
+    return {
+      checkedSchools: schools.rowCount,
+      createdBackups: created,
+      trigger,
+      createdAt: new Date().toISOString(),
+    };
+  } finally {
+    client.release();
+  }
+}
+
 function canAccessSchool(user, schoolId) {
   if (user.role === ROLE_SUPERADMIN) return true;
   if (!user.schoolId) return false;
@@ -360,7 +637,7 @@ async function authenticate(req, res, next) {
   try {
     const result = await pool.query(
       `
-      SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+      SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
              s.name AS school_name, s.active AS school_active
       FROM users u
       LEFT JOIN schools s ON s.id = u.school_id
@@ -406,6 +683,16 @@ function requireWriteAccess(req, res, next) {
     return res.status(403).json({ error: "read_only_profile" });
   }
   next();
+}
+
+function requirePermission(permissionPath) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: "auth_required" });
+    if (!hasEffectivePermission(req.user, permissionPath)) {
+      return res.status(403).json({ error: "permission_denied", permission: permissionPath });
+    }
+    next();
+  };
 }
 
 function requireSchoolScope(options = {}) {
@@ -562,10 +849,16 @@ async function ensureEnterpriseSchema() {
         password_hash TEXT NOT NULL,
         role VARCHAR(30) NOT NULL CHECK (role IN ('superadmin','admin_escola','somente_leitura')),
         school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+        permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
         active BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       )
+    `);
+
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb
     `);
 
     await client.query(`
@@ -615,6 +908,18 @@ async function ensureEnterpriseSchema() {
     `);
 
     await client.query(`
+      CREATE TABLE IF NOT EXISTS school_backups (
+        id BIGSERIAL PRIMARY KEY,
+        school_id INTEGER NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+        schedule JSONB NOT NULL,
+        metadata JSONB,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        trigger VARCHAR(40) NOT NULL DEFAULT 'manual',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_schedules_school_id ON schedules(school_id)
     `);
     await client.query(`
@@ -625,6 +930,9 @@ async function ensureEnterpriseSchema() {
     `);
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_alerts_status_school ON alerts(status, school_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_school_backups_school_created_at ON school_backups(school_id, created_at DESC)
     `);
 
     await client.query("COMMIT");
@@ -657,16 +965,32 @@ async function seedDefaultSuperAdmin() {
 }
 
 app.get("/api/health", async (_req, res) => {
+  const start = Date.now();
   try {
     await pool.query("SELECT 1");
-    res.json({ ok: true });
+    const latencyMs = Date.now() - start;
+    res.json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      database: {
+        status: "up",
+        latencyMs,
+      },
+    });
   } catch (error) {
     console.error("Health check error:", {
       code: error?.code,
       message: error?.message,
     });
 
-    const payload = { ok: false, error: "database_unavailable" };
+    const payload = {
+      ok: false,
+      error: "database_unavailable",
+      timestamp: new Date().toISOString(),
+      database: {
+        status: "down",
+      },
+    };
     if (process.env.NODE_ENV !== "production") {
       payload.detail = {
         code: error?.code || null,
@@ -689,7 +1013,7 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT u.id, u.name, u.email, u.password_hash, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+      SELECT u.id, u.name, u.email, u.password_hash, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
              s.name AS school_name, s.active AS school_active
       FROM users u
       LEFT JOIN schools s ON s.id = u.school_id
@@ -751,9 +1075,76 @@ app.get("/api/auth/me", authenticate, (req, res) => {
   res.json({ user: req.user });
 });
 
+app.post("/api/auth/change-password", authenticate, async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword || "");
+  const newPassword = String(req.body?.newPassword || "");
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "current_and_new_password_required" });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: "password_too_short" });
+  }
+
+  try {
+    const userResult = await pool.query(
+      `
+      SELECT id, email, password_hash, school_id
+      FROM users
+      WHERE id = $1 AND active = TRUE
+      LIMIT 1
+      `,
+      [req.user.id]
+    );
+    if (!userResult.rowCount) {
+      return res.status(404).json({ error: "user_not_found" });
+    }
+
+    const userRow = userResult.rows[0];
+    const matches = await bcrypt.compare(currentPassword, userRow.password_hash);
+    if (!matches) {
+      return res.status(401).json({ error: "invalid_current_password" });
+    }
+
+    const samePassword = await bcrypt.compare(newPassword, userRow.password_hash);
+    if (samePassword) {
+      return res.status(400).json({ error: "new_password_must_be_different" });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      `
+      UPDATE users
+      SET password_hash = $1,
+          updated_at = NOW()
+      WHERE id = $2
+      `,
+      [passwordHash, req.user.id]
+    );
+
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: req.user.schoolId || null,
+      action: "change_password_self",
+      resource: "auth",
+      resourceId: String(req.user.id),
+      afterData: { changedAt: new Date().toISOString() },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("POST /api/auth/change-password error:", error);
+    sendInternalError(res, "failed_to_change_password", error);
+  }
+});
+
 app.get(
   "/api/auth/users",
   authenticate,
+  requirePermission("menus.users"),
   requireRoles([ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA]),
   async (req, res) => {
     try {
@@ -768,7 +1159,7 @@ app.get(
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
       const result = await pool.query(
         `
-        SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+        SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                s.name AS school_name
         FROM users u
         LEFT JOIN schools s ON s.id = u.school_id
@@ -789,6 +1180,8 @@ app.get(
 app.post(
   "/api/auth/users",
   authenticate,
+  requirePermission("menus.users"),
+  requirePermission("features.users_create"),
   requireRoles([ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA]),
   async (req, res) => {
     const name = String(req.body?.name || "").trim();
@@ -797,6 +1190,7 @@ app.post(
     const role = String(req.body?.role || "").trim();
     const requestedSchoolId =
       req.body?.schoolId !== undefined ? toIntId(req.body.schoolId) : null;
+    const requestedPermissions = normalizePermissionsPayload(req.body?.permissions);
     const active = req.body?.active === false ? false : true;
 
     if (!name || !email || !password || !ALL_ROLES.includes(role)) {
@@ -839,14 +1233,15 @@ app.post(
 
     try {
       const passwordHash = await bcrypt.hash(password, 12);
+      const permissionsToSave = requestedPermissions;
 
       const result = await pool.query(
         `
-        INSERT INTO users (name, email, password_hash, role, school_id, active)
-        VALUES ($1,$2,$3,$4,$5,$6)
-        RETURNING id, name, email, role, school_id, active, created_at, updated_at
+        INSERT INTO users (name, email, password_hash, role, school_id, permissions, active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        RETURNING id, name, email, role, school_id, permissions, active, created_at, updated_at
         `,
-        [name, email, passwordHash, role, targetSchoolId, active]
+        [name, email, passwordHash, role, targetSchoolId, JSON.stringify(permissionsToSave), active]
       );
 
       const created = sanitizeUser(result.rows[0]);
@@ -876,6 +1271,8 @@ app.post(
 app.patch(
   "/api/auth/users/:id",
   authenticate,
+  requirePermission("menus.users"),
+  requirePermission("features.users_edit"),
   requireRoles([ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA]),
   async (req, res) => {
   const userId = toIntId(req.params.id);
@@ -884,7 +1281,7 @@ app.patch(
   try {
     const beforeResult = await pool.query(
       `
-      SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+      SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
              s.name AS school_name
       FROM users u
       LEFT JOIN schools s ON s.id = u.school_id
@@ -957,7 +1354,7 @@ app.patch(
     }
 
     if (Object.prototype.hasOwnProperty.call(req.body, "active")) {
-      if (!isSuperAdmin && req.user.id === userId && req.body.active === false) {
+      if (req.user.id === userId && req.body.active === false) {
         return res.status(400).json({ error: "cannot_deactivate_self" });
       }
       values.push(Boolean(req.body.active));
@@ -965,6 +1362,9 @@ app.patch(
     }
 
     if (Object.prototype.hasOwnProperty.call(req.body, "password")) {
+      if (!isSuperAdmin) {
+        return res.status(403).json({ error: "password_reset_requires_superadmin" });
+      }
       const password = String(req.body.password || "");
       if (password.length < 6) {
         return res.status(400).json({ error: "password_too_short" });
@@ -972,6 +1372,12 @@ app.patch(
       const hash = await bcrypt.hash(password, 12);
       values.push(hash);
       updates.push(`password_hash = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "permissions")) {
+      const permissions = normalizePermissionsPayload(req.body.permissions);
+      values.push(JSON.stringify(permissions));
+      updates.push(`permissions = $${values.length}`);
     }
 
     if (updates.length === 0) {
@@ -1015,7 +1421,7 @@ app.patch(
       UPDATE users
       SET ${updates.join(", ")}
       WHERE id = $${values.length}
-      RETURNING id, name, email, role, school_id, active, created_at, updated_at
+      RETURNING id, name, email, role, school_id, permissions, active, created_at, updated_at
       `,
       values
     );
@@ -1043,6 +1449,143 @@ app.patch(
     console.error("PATCH /api/auth/users/:id error:", error);
     sendInternalError(res, "failed_to_update_user", error);
   }
+  }
+);
+
+app.post(
+  "/api/auth/users/:id/reset-password",
+  authenticate,
+  requirePermission("menus.users"),
+  requirePermission("features.users_reset_password"),
+  requireRoles([ROLE_SUPERADMIN]),
+  async (req, res) => {
+    const userId = toIntId(req.params.id);
+    const newPassword = String(req.body?.newPassword || "");
+    if (!userId) return res.status(400).json({ error: "invalid_user_id" });
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "password_too_short" });
+    }
+
+    try {
+      const beforeResult = await pool.query(
+        `
+        SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+               s.name AS school_name
+        FROM users u
+        LEFT JOIN schools s ON s.id = u.school_id
+        WHERE u.id = $1
+        LIMIT 1
+        `,
+        [userId]
+      );
+      if (!beforeResult.rowCount) {
+        return res.status(404).json({ error: "user_not_found" });
+      }
+
+      const before = beforeResult.rows[0];
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      await pool.query(
+        `
+        UPDATE users
+        SET password_hash = $1,
+            updated_at = NOW()
+        WHERE id = $2
+        `,
+        [passwordHash, userId]
+      );
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: before.school_id || null,
+        action: "reset_user_password",
+        resource: "user",
+        resourceId: String(userId),
+        beforeData: sanitizeUser(before),
+        afterData: { passwordReset: true },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("POST /api/auth/users/:id/reset-password error:", error);
+      sendInternalError(res, "failed_to_reset_user_password", error);
+    }
+  }
+);
+
+app.delete(
+  "/api/auth/users/:id",
+  authenticate,
+  requirePermission("menus.users"),
+  requirePermission("features.users_disable"),
+  requireRoles([ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA]),
+  async (req, res) => {
+    const userId = toIntId(req.params.id);
+    if (!userId) return res.status(400).json({ error: "invalid_user_id" });
+
+    try {
+      const beforeResult = await pool.query(
+        `
+        SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+               s.name AS school_name
+        FROM users u
+        LEFT JOIN schools s ON s.id = u.school_id
+        WHERE u.id = $1
+        LIMIT 1
+        `,
+        [userId]
+      );
+      if (!beforeResult.rowCount) {
+        return res.status(404).json({ error: "user_not_found" });
+      }
+
+      const before = beforeResult.rows[0];
+      if (Number(before.id) === Number(req.user.id)) {
+        return res.status(400).json({ error: "cannot_deactivate_self" });
+      }
+
+      if (req.user.role !== ROLE_SUPERADMIN) {
+        if (!req.user.schoolId) return res.status(403).json({ error: "school_access_denied" });
+        if (before.role === ROLE_SUPERADMIN) {
+          return res.status(403).json({ error: "cannot_deactivate_superadmin" });
+        }
+        if (Number(before.school_id) !== Number(req.user.schoolId)) {
+          return res.status(403).json({ error: "school_access_denied" });
+        }
+      }
+
+      const updateResult = await pool.query(
+        `
+        UPDATE users
+        SET active = FALSE,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, name, email, role, school_id, permissions, active, created_at, updated_at
+        `,
+        [userId]
+      );
+      const after = sanitizeUser(updateResult.rows[0]);
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: after.schoolId || null,
+        action: "deactivate_user",
+        resource: "user",
+        resourceId: String(userId),
+        beforeData: sanitizeUser(before),
+        afterData: after,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      res.json({ success: true, user: after });
+    } catch (error) {
+      console.error("DELETE /api/auth/users/:id error:", error);
+      sendInternalError(res, "failed_to_deactivate_user", error);
+    }
   }
 );
 
@@ -1246,6 +1789,7 @@ app.delete("/api/schools/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), as
 app.get(
   "/api/schools/:id/schedule",
   authenticate,
+  requirePermission("menus.config"),
   requireSchoolScope({ paramName: "id" }),
   async (req, res) => {
     try {
@@ -1263,6 +1807,8 @@ app.get(
 app.put(
   "/api/schools/:id/schedule",
   authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_schedule_write"),
   requireWriteAccess,
   requireSchoolScope({ paramName: "id" }),
   async (req, res) => {
@@ -1312,7 +1858,7 @@ app.put(
   }
 );
 
-app.get("/api/templates", authenticate, async (req, res) => {
+app.get("/api/templates", authenticate, requirePermission("menus.config"), async (req, res) => {
   try {
     const requestedSchoolId = req.query.schoolId ? toIntId(req.query.schoolId) : null;
     const values = [];
@@ -1360,7 +1906,13 @@ app.get("/api/templates", authenticate, async (req, res) => {
   }
 });
 
-app.post("/api/templates", authenticate, requireWriteAccess, async (req, res) => {
+app.post(
+  "/api/templates",
+  authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_templates"),
+  requireWriteAccess,
+  async (req, res) => {
   const name = String(req.body?.name || "").trim();
   const description = String(req.body?.description || "").trim() || null;
   const sourceSchoolId =
@@ -1420,9 +1972,16 @@ app.post("/api/templates", authenticate, requireWriteAccess, async (req, res) =>
   } finally {
     client.release();
   }
-});
+  }
+);
 
-app.post("/api/templates/:id/clone-to-school", authenticate, requireWriteAccess, async (req, res) => {
+app.post(
+  "/api/templates/:id/clone-to-school",
+  authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_templates"),
+  requireWriteAccess,
+  async (req, res) => {
   const templateId = toIntId(req.params.id);
   const requestedTargetSchoolId = toIntId(req.body?.targetSchoolId);
   const targetSchoolId =
@@ -1505,11 +2064,14 @@ app.post("/api/templates/:id/clone-to-school", authenticate, requireWriteAccess,
   } finally {
     client.release();
   }
-});
+  }
+);
 
 app.get(
   "/api/schools/:id/backup",
   authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_backup_export"),
   requireSchoolScope({ paramName: "id" }),
   async (req, res) => {
     try {
@@ -1523,6 +2085,14 @@ app.get(
         school: mapSchool(school),
         schedule,
       };
+      const snapshot = await saveSchoolBackupSnapshot(pool, {
+        schoolId: req.targetSchoolId,
+        schedule,
+        createdBy: req.user.id,
+        trigger: "manual_export",
+        metadata: { exportedAt: backup.exportedAt },
+      });
+      backup.backupId = snapshot?.id || null;
 
       const meta = getRequestMeta(req);
       await writeAuditLog({
@@ -1544,9 +2114,100 @@ app.get(
   }
 );
 
+app.get(
+  "/api/schools/:id/backups",
+  authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_backup_export"),
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    const limitRaw = Number.parseInt(String(req.query.limit || "30"), 10);
+    const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 30;
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT b.id, b.school_id, b.schedule, b.metadata, b.created_by, b.trigger, b.created_at,
+               u.name AS created_by_name
+        FROM school_backups b
+        LEFT JOIN users u ON u.id = b.created_by
+        WHERE b.school_id = $1
+        ORDER BY b.created_at DESC
+        LIMIT $2
+        `,
+        [req.targetSchoolId, limit]
+      );
+
+      res.json(
+        result.rows.map((row) => ({
+          id: row.id,
+          schoolId: row.school_id,
+          trigger: row.trigger,
+          metadata: row.metadata,
+          createdBy: row.created_by,
+          createdByName: row.created_by_name || null,
+          createdAt: row.created_at,
+          summary: summarizeSchedule(row.schedule),
+        }))
+      );
+    } catch (error) {
+      console.error("GET /api/schools/:id/backups error:", error);
+      sendInternalError(res, "failed_to_list_backups", error);
+    }
+  }
+);
+
+app.get(
+  "/api/schools/:id/backups/:backupId",
+  authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_backup_export"),
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    const backupId = toIntId(req.params.backupId);
+    if (!backupId) return res.status(400).json({ error: "invalid_backup_id" });
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT b.id, b.school_id, b.schedule, b.metadata, b.created_by, b.trigger, b.created_at,
+               u.name AS created_by_name
+        FROM school_backups b
+        LEFT JOIN users u ON u.id = b.created_by
+        WHERE b.id = $1
+          AND b.school_id = $2
+        LIMIT 1
+        `,
+        [backupId, req.targetSchoolId]
+      );
+      if (!result.rowCount) {
+        return res.status(404).json({ error: "backup_not_found" });
+      }
+
+      const row = result.rows[0];
+      res.json({
+        id: row.id,
+        schoolId: row.school_id,
+        trigger: row.trigger,
+        metadata: row.metadata,
+        createdBy: row.created_by,
+        createdByName: row.created_by_name || null,
+        createdAt: row.created_at,
+        summary: summarizeSchedule(row.schedule),
+        schedule: row.schedule,
+      });
+    } catch (error) {
+      console.error("GET /api/schools/:id/backups/:backupId error:", error);
+      sendInternalError(res, "failed_to_load_backup", error);
+    }
+  }
+);
+
 app.post(
   "/api/schools/:id/restore",
   authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_backup_import"),
   requireWriteAccess,
   requireSchoolScope({ paramName: "id" }),
   async (req, res) => {
@@ -1595,10 +2256,90 @@ app.post(
   }
 );
 
-app.get("/api/audit-logs", authenticate, async (req, res) => {
+app.post(
+  "/api/schools/:id/restore-backup",
+  authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_backup_restore"),
+  requireWriteAccess,
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    const backupId = toIntId(req.body?.backupId);
+    if (!backupId) return res.status(400).json({ error: "invalid_backup_id" });
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const backupResult = await client.query(
+        `
+        SELECT id, school_id, schedule, trigger, created_at, created_by
+        FROM school_backups
+        WHERE id = $1
+          AND school_id = $2
+        LIMIT 1
+        `,
+        [backupId, req.targetSchoolId]
+      );
+      if (!backupResult.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "backup_not_found" });
+      }
+
+      const backup = backupResult.rows[0];
+      const schedule = normalizeSchedulePayload(backup.schedule);
+      const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
+      await client.query("COMMIT");
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.targetSchoolId,
+        action: "restore_backup_snapshot",
+        resource: "backup",
+        resourceId: String(backup.id),
+        beforeData: beforeSchedule,
+        afterData: schedule,
+        meta: {
+          trigger: backup.trigger,
+          backupCreatedAt: backup.created_at,
+          backupCreatedBy: backup.created_by,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      res.json({ success: true, backupId: backup.id, schedule });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("POST /api/schools/:id/restore-backup error:", error);
+      sendInternalError(res, "failed_to_restore_selected_backup", error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.get(
+  "/api/audit-logs",
+  authenticate,
+  requirePermission("menus.audit"),
+  requirePermission("features.audit_view"),
+  async (req, res) => {
   const limitRaw = Number.parseInt(String(req.query.limit || "100"), 10);
   const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 100;
   const schoolIdFilter = req.query.schoolId ? toIntId(req.query.schoolId) : null;
+  const userIdFilter = req.query.userId ? toIntId(req.query.userId) : null;
+  const fromFilter = req.query.from ? parseDateFilter(req.query.from) : null;
+  const toFilter = req.query.to ? parseDateFilter(req.query.to, { endOfDay: true }) : null;
+
+  if (req.query.from && !fromFilter) {
+    return res.status(400).json({ error: "invalid_from_date" });
+  }
+  if (req.query.to && !toFilter) {
+    return res.status(400).json({ error: "invalid_to_date" });
+  }
 
   try {
     const values = [];
@@ -1616,6 +2357,21 @@ app.get("/api/audit-logs", authenticate, async (req, res) => {
     if (req.query.action) {
       values.push(String(req.query.action));
       where.push(`al.action = $${values.length}`);
+    }
+
+    if (userIdFilter) {
+      values.push(userIdFilter);
+      where.push(`al.user_id = $${values.length}`);
+    }
+
+    if (fromFilter) {
+      values.push(fromFilter);
+      where.push(`al.created_at >= $${values.length}`);
+    }
+
+    if (toFilter) {
+      values.push(toFilter);
+      where.push(`al.created_at <= $${values.length}`);
     }
 
     values.push(limit);
@@ -1658,7 +2414,8 @@ app.get("/api/audit-logs", authenticate, async (req, res) => {
     console.error("GET /api/audit-logs error:", error);
     sendInternalError(res, "failed_to_list_audit_logs", error);
   }
-});
+  }
+);
 
 app.get("/api/alerts", authenticate, async (req, res) => {
   try {
@@ -1831,34 +2588,121 @@ app.post("/api/monitor/playback-error", authenticate, async (req, res) => {
   }
 });
 
-app.get("/api/monitor/status", authenticate, requireRoles([ROLE_SUPERADMIN]), async (_req, res) => {
+app.get("/api/monitor/status", authenticate, requirePermission("menus.dashboard"), async (req, res) => {
   try {
-    const sweep = await runMonitoringSweep("manual");
+    const dbStart = Date.now();
+    await pool.query("SELECT 1");
+    const dbLatencyMs = Date.now() - dbStart;
 
-    const openAlerts = await pool.query(
-      `
-      SELECT severity, COUNT(*)::int AS total
-      FROM alerts
-      WHERE status = 'open'
-      GROUP BY severity
-      `
-    );
+    if (req.user.role === ROLE_SUPERADMIN) {
+      const sweep = await runMonitoringSweep("manual", req.user.id);
 
-    const schools = await pool.query("SELECT COUNT(*)::int AS total FROM schools WHERE active = TRUE");
-    const users = await pool.query("SELECT COUNT(*)::int AS total FROM users WHERE active = TRUE");
+      const openAlerts = await pool.query(
+        `
+        SELECT severity, COUNT(*)::int AS total
+        FROM alerts
+        WHERE status = 'open'
+        GROUP BY severity
+        `
+      );
 
-    res.json({
-      apiOnline: true,
-      checkedAt: sweep.checkedAt,
-      checkedSchools: sweep.checkedSchools,
-      schoolsWithoutSchedule: sweep.schoolsWithoutSchedule,
-      activeSchools: schools.rows[0]?.total || 0,
-      activeUsers: users.rows[0]?.total || 0,
-      openAlertsBySeverity: openAlerts.rows.reduce((acc, row) => {
-        acc[row.severity] = row.total;
-        return acc;
-      }, {}),
-    });
+      const schools = await pool.query(
+        "SELECT COUNT(*)::int AS total FROM schools WHERE active = TRUE"
+      );
+      const users = await pool.query("SELECT COUNT(*)::int AS total FROM users WHERE active = TRUE");
+
+      return res.json({
+        apiOnline: true,
+        scope: "global",
+        checkedAt: sweep.checkedAt,
+        checkedSchools: sweep.checkedSchools,
+        schoolsWithoutSchedule: sweep.schoolsWithoutSchedule,
+        activeSchools: schools.rows[0]?.total || 0,
+        activeUsers: users.rows[0]?.total || 0,
+        database: {
+          status: "up",
+          latencyMs: dbLatencyMs,
+        },
+        openAlertsBySeverity: openAlerts.rows.reduce((acc, row) => {
+          acc[row.severity] = row.total;
+          return acc;
+        }, {}),
+      });
+    }
+
+    const schoolId = toIntId(req.user.schoolId);
+    if (!schoolId) {
+      return res.status(400).json({ error: "school_scope_not_found" });
+    }
+
+    const client = await pool.connect();
+    try {
+      const schoolResult = await client.query(
+        `
+        SELECT s.id, s.name, COUNT(sc.id)::int AS schedule_count
+        FROM schools s
+        LEFT JOIN schedules sc ON sc.school_id = s.id
+        WHERE s.id = $1
+          AND s.active = TRUE
+        GROUP BY s.id, s.name
+        LIMIT 1
+        `,
+        [schoolId]
+      );
+
+      if (!schoolResult.rowCount) {
+        return res.status(404).json({ error: "school_not_found" });
+      }
+
+      const school = schoolResult.rows[0];
+      const fingerprint = `school_without_schedule:${school.id}`;
+      if (school.schedule_count === 0) {
+        await upsertAlert(client, {
+          type: "school_without_schedule",
+          severity: "warning",
+          schoolId: school.id,
+          message: `Escola "${school.name}" sem horarios cadastrados.`,
+          fingerprint,
+          details: {
+            monitorTrigger: "manual_scoped",
+            checkedAt: new Date().toISOString(),
+          },
+        });
+      } else {
+        await resolveAlertByFingerprint(client, fingerprint, req.user.id);
+      }
+
+      const openAlerts = await client.query(
+        `
+        SELECT severity, COUNT(*)::int AS total
+        FROM alerts
+        WHERE status = 'open'
+          AND school_id = $1
+        GROUP BY severity
+        `,
+        [schoolId]
+      );
+
+      res.json({
+        apiOnline: true,
+        scope: "school",
+        schoolId,
+        checkedAt: new Date().toISOString(),
+        checkedSchools: 1,
+        schoolsWithoutSchedule: school.schedule_count === 0 ? 1 : 0,
+        activeSchools: 1,
+        database: {
+          status: "up",
+          latencyMs: dbLatencyMs,
+        },
+        openAlertsBySeverity: openAlerts.rows.reduce((acc, row) => {
+          acc[row.severity] = row.total;
+          return acc;
+        }, {}),
+      });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error("GET /api/monitor/status error:", error);
     sendInternalError(res, "failed_to_get_monitor_status", error);
@@ -1883,12 +2727,19 @@ async function startServer() {
   await ensureEnterpriseSchema();
   await seedDefaultSuperAdmin();
   await runMonitoringSweep("startup");
+  await runDailyBackupSweep("daily");
 
   setInterval(() => {
     runMonitoringSweep("interval").catch((error) => {
       console.error("Monitoring sweep error:", error);
     });
   }, MONITOR_INTERVAL_MS).unref();
+
+  setInterval(() => {
+    runDailyBackupSweep("daily").catch((error) => {
+      console.error("Daily backup sweep error:", error);
+    });
+  }, DAILY_BACKUP_INTERVAL_MS).unref();
 
   app.listen(PORT, () => {
     console.log(`SinalTech API running on port ${PORT}`);

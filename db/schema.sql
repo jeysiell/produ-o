@@ -25,10 +25,14 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role VARCHAR(30) NOT NULL CHECK (role IN ('superadmin', 'admin_escola', 'somente_leitura')),
   school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+  permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY,
@@ -70,6 +74,16 @@ CREATE TABLE IF NOT EXISTS alerts (
   resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS school_backups (
+  id BIGSERIAL PRIMARY KEY,
+  school_id INTEGER NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  schedule JSONB NOT NULL,
+  metadata JSONB,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  trigger VARCHAR(40) NOT NULL DEFAULT 'manual',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_schedules_school_period_time
   ON schedules (school_id, period, time);
 
@@ -81,3 +95,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
 
 CREATE INDEX IF NOT EXISTS idx_alerts_status_school
   ON alerts (status, school_id);
+
+CREATE INDEX IF NOT EXISTS idx_school_backups_school_created_at
+  ON school_backups (school_id, created_at DESC);

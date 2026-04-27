@@ -8,6 +8,131 @@
   const ROLE_SUPERADMIN = "superadmin";
   const ROLE_ADMIN_ESCOLA = "admin_escola";
   const ROLE_SOMENTE_LEITURA = "somente_leitura";
+  const PERMISSION_KEYS = {
+    menus: ["dashboard", "config", "schools", "users", "audit"],
+    features: [
+      "dashboard_manual_play",
+      "config_schedule_write",
+      "config_templates",
+      "config_backup_export",
+      "config_backup_import",
+      "config_backup_restore",
+      "users_create",
+      "users_edit",
+      "users_disable",
+      "users_reset_password",
+      "audit_view",
+    ],
+  };
+  const ROLE_PERMISSION_DEFAULTS = {
+    [ROLE_SUPERADMIN]: {
+      menus: {
+        dashboard: true,
+        config: true,
+        schools: true,
+        users: true,
+        audit: true,
+      },
+      features: {
+        dashboard_manual_play: true,
+        config_schedule_write: true,
+        config_templates: true,
+        config_backup_export: true,
+        config_backup_import: true,
+        config_backup_restore: true,
+        users_create: true,
+        users_edit: true,
+        users_disable: true,
+        users_reset_password: true,
+        audit_view: true,
+      },
+    },
+    [ROLE_ADMIN_ESCOLA]: {
+      menus: {
+        dashboard: true,
+        config: true,
+        schools: false,
+        users: true,
+        audit: true,
+      },
+      features: {
+        dashboard_manual_play: true,
+        config_schedule_write: true,
+        config_templates: true,
+        config_backup_export: true,
+        config_backup_import: true,
+        config_backup_restore: true,
+        users_create: true,
+        users_edit: true,
+        users_disable: true,
+        users_reset_password: false,
+        audit_view: true,
+      },
+    },
+    [ROLE_SOMENTE_LEITURA]: {
+      menus: {
+        dashboard: true,
+        config: true,
+        schools: false,
+        users: false,
+        audit: true,
+      },
+      features: {
+        dashboard_manual_play: false,
+        config_schedule_write: false,
+        config_templates: false,
+        config_backup_export: true,
+        config_backup_import: false,
+        config_backup_restore: false,
+        users_create: false,
+        users_edit: false,
+        users_disable: false,
+        users_reset_password: false,
+        audit_view: true,
+      },
+    },
+  };
+  const PERMISSION_LABELS = {
+    menus: {
+      dashboard: "Menu Dashboard",
+      config: "Menu Configuracoes",
+      schools: "Menu Escolas",
+      users: "Menu Usuarios",
+      audit: "Menu Auditoria",
+    },
+    features: {
+      dashboard_manual_play: "Dashboard: tocar sinal manual",
+      config_schedule_write: "Config: editar horarios",
+      config_templates: "Config: templates",
+      config_backup_export: "Config: exportar backup",
+      config_backup_import: "Config: importar backup",
+      config_backup_restore: "Config: restaurar backups",
+      users_create: "Usuarios: criar",
+      users_edit: "Usuarios: editar",
+      users_disable: "Usuarios: desativar",
+      users_reset_password: "Usuarios: resetar senha",
+      audit_view: "Auditoria: visualizar logs",
+    },
+  };
+  const PERMISSION_MENU_GROUPS = [
+    { menu: "dashboard", features: ["dashboard_manual_play"] },
+    {
+      menu: "config",
+      features: [
+        "config_schedule_write",
+        "config_templates",
+        "config_backup_export",
+        "config_backup_import",
+        "config_backup_restore",
+      ],
+    },
+    { menu: "schools", features: [] },
+    {
+      menu: "users",
+      features: ["users_create", "users_edit", "users_disable", "users_reset_password"],
+    },
+    { menu: "audit", features: ["audit_view"] },
+  ];
 
   const musicLabels = {
     "musica1.mp3": "Tu me Sondas",
@@ -22,13 +147,22 @@
   const navConfig = document.getElementById("navConfig");
   const navSchools = document.getElementById("navSchools");
   const navUsers = document.getElementById("navUsers");
+  const navAudits = document.getElementById("navAudits");
   const dashboardSection = document.getElementById("dashboardSection");
   const configSection = document.getElementById("configSection");
   const schoolsSection = document.getElementById("schoolsSection");
   const usersSection = document.getElementById("usersSection");
+  const auditSection = document.getElementById("auditSection");
   const pageEyebrow = document.getElementById("pageEyebrow");
   const pageTitle = document.getElementById("pageTitle");
   const sidebar = document.getElementById("sidebar");
+  const dashboardDbStatus = document.getElementById("dashboardDbStatus");
+  const dashboardDbLatency = document.getElementById("dashboardDbLatency");
+  const dashboardOpenAlerts = document.getElementById("dashboardOpenAlerts");
+  const dashboardSchoolsWithoutSchedule = document.getElementById("dashboardSchoolsWithoutSchedule");
+  const dashboardMonitorCheckedAt = document.getElementById("dashboardMonitorCheckedAt");
+  const dashboardAlertList = document.getElementById("dashboardAlertList");
+  const refreshDashboardMonitorBtn = document.getElementById("refreshDashboardMonitorBtn");
 
   const dashboardSchoolSelect = document.getElementById("dashboardSchoolSelect");
   const configSchoolSelect = document.getElementById("configSchoolSelect");
@@ -37,6 +171,10 @@
   const cloneTemplateBtn = document.getElementById("cloneTemplateBtn");
   const exportBackupBtn = document.getElementById("exportBackupBtn");
   const importBackupInput = document.getElementById("importBackupInput");
+  const backupSnapshotSelect = document.getElementById("backupSnapshotSelect");
+  const refreshBackupsBtn = document.getElementById("refreshBackupsBtn");
+  const previewBackupBtn = document.getElementById("previewBackupBtn");
+  const restoreBackupBtn = document.getElementById("restoreBackupBtn");
 
   const filterPeriod = document.getElementById("configFilterPeriod");
   const scheduleTable = document.getElementById("configScheduleTable");
@@ -84,7 +222,17 @@
   const userPasswordInput = document.getElementById("userPasswordInput");
   const userRoleInput = document.getElementById("userRoleInput");
   const userSchoolSelect = document.getElementById("userSchoolSelect");
+  const userPermissionsGrid = document.getElementById("userPermissionsGrid");
   const userActiveInput = document.getElementById("userActiveInput");
+
+  const auditSchoolFilter = document.getElementById("auditSchoolFilter");
+  const auditUserFilter = document.getElementById("auditUserFilter");
+  const auditActionFilter = document.getElementById("auditActionFilter");
+  const auditFromDate = document.getElementById("auditFromDate");
+  const auditToDate = document.getElementById("auditToDate");
+  const auditApplyFiltersBtn = document.getElementById("auditApplyFiltersBtn");
+  const refreshAuditBtn = document.getElementById("refreshAuditBtn");
+  const auditTableBody = document.getElementById("auditTableBody");
 
   const authOverlay = document.getElementById("authOverlay");
   const loginForm = document.getElementById("loginForm");
@@ -96,7 +244,16 @@
   const authUserName = document.getElementById("authUserName");
   const authUserRole = document.getElementById("authUserRole");
   const authUserIcon = document.getElementById("authUserIcon");
+  const changePasswordBtn = document.getElementById("changePasswordBtn");
   const logoutBtn = document.getElementById("logoutBtn");
+
+  const changePasswordModal = document.getElementById("changePasswordModal");
+  const changePasswordModalContent = document.getElementById("changePasswordModalContent");
+  const changePasswordForm = document.getElementById("changePasswordForm");
+  const currentPasswordInput = document.getElementById("currentPasswordInput");
+  const newPasswordInput = document.getElementById("newPasswordInput");
+  const confirmPasswordInput = document.getElementById("confirmPasswordInput");
+  const cancelChangePasswordBtn = document.getElementById("cancelChangePasswordBtn");
 
   const navActiveClasses = ["bg-slate-900", "text-white", "shadow-soft", "dark:bg-slate-800"];
   const navInactiveClasses = [
@@ -116,6 +273,8 @@
   let schools = [];
   let templates = [];
   let users = [];
+  let auditLogs = [];
+  let backupSnapshots = [];
   let currentUser = null;
 
   function formatRoleLabel(role) {
@@ -136,11 +295,138 @@
   }
 
   function canWrite() {
-    return currentUser && currentUser.role !== ROLE_SOMENTE_LEITURA;
+    return Boolean(currentUser) && hasPermission("features.config_schedule_write");
   }
 
   function canManageUsers() {
-    return Boolean(currentUser) && (isSuperAdmin() || isSchoolAdmin());
+    if (!currentUser) return false;
+    if (!hasPermission("menus.users")) return false;
+    return (
+      hasPermission("features.users_create") ||
+      hasPermission("features.users_edit") ||
+      hasPermission("features.users_disable") ||
+      hasPermission("features.users_reset_password")
+    );
+  }
+
+  function canCreateUsers() {
+    return Boolean(currentUser) && hasPermission("menus.users") && hasPermission("features.users_create");
+  }
+
+  function canViewAuditLogs() {
+    return Boolean(currentUser) && hasPermission("menus.audit") && hasPermission("features.audit_view");
+  }
+
+  function canAccessConfigMenu() {
+    return Boolean(currentUser) && hasPermission("menus.config");
+  }
+
+  function canAccessDashboardMenu() {
+    return Boolean(currentUser) && hasPermission("menus.dashboard");
+  }
+
+  function canAccessSchoolsMenu() {
+    return isSuperAdmin() && hasPermission("menus.schools");
+  }
+
+  function canUseTemplates() {
+    return canAccessConfigMenu() && hasPermission("features.config_templates");
+  }
+
+  function canExportBackup() {
+    return canAccessConfigMenu() && hasPermission("features.config_backup_export");
+  }
+
+  function canImportBackup() {
+    return canAccessConfigMenu() && hasPermission("features.config_backup_import");
+  }
+
+  function canRestoreBackups() {
+    return canAccessConfigMenu() && hasPermission("features.config_backup_restore");
+  }
+
+  function buildEmptyPermissions() {
+    return {
+      menus: Object.fromEntries(PERMISSION_KEYS.menus.map((key) => [key, false])),
+      features: Object.fromEntries(PERMISSION_KEYS.features.map((key) => [key, false])),
+    };
+  }
+
+  function normalizePermissionsPayload(rawPermissions, options = {}) {
+    const includeAllKeys = options.includeAllKeys === true;
+    const normalized = includeAllKeys ? buildEmptyPermissions() : { menus: {}, features: {} };
+    if (!rawPermissions || typeof rawPermissions !== "object") return normalized;
+
+    const rawMenus =
+      rawPermissions.menus && typeof rawPermissions.menus === "object" ? rawPermissions.menus : {};
+    const rawFeatures =
+      rawPermissions.features && typeof rawPermissions.features === "object"
+        ? rawPermissions.features
+        : {};
+
+    PERMISSION_KEYS.menus.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(rawMenus, key)) {
+        normalized.menus[key] = Boolean(rawMenus[key]);
+      }
+    });
+
+    PERMISSION_KEYS.features.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(rawFeatures, key)) {
+        normalized.features[key] = Boolean(rawFeatures[key]);
+      }
+    });
+
+    return normalized;
+  }
+
+  function getRoleDefaultPermissions(role) {
+    const defaults = ROLE_PERMISSION_DEFAULTS[role] || buildEmptyPermissions();
+    return {
+      menus: { ...(defaults.menus || {}) },
+      features: { ...(defaults.features || {}) },
+    };
+  }
+
+  function getEffectivePermissions(role, customPermissions) {
+    const defaults = getRoleDefaultPermissions(role);
+    const custom = normalizePermissionsPayload(customPermissions);
+    const effective = buildEmptyPermissions();
+
+    PERMISSION_KEYS.menus.forEach((key) => {
+      const allowedByRole = Boolean(defaults.menus[key]);
+      const explicit = custom.menus[key];
+      effective.menus[key] = allowedByRole ? explicit !== false : false;
+    });
+
+    PERMISSION_KEYS.features.forEach((key) => {
+      const allowedByRole = Boolean(defaults.features[key]);
+      const explicit = custom.features[key];
+      effective.features[key] = allowedByRole ? explicit !== false : false;
+    });
+
+    return effective;
+  }
+
+  function getCurrentEffectivePermissions() {
+    if (!currentUser) return buildEmptyPermissions();
+    if (
+      currentUser.effectivePermissions &&
+      typeof currentUser.effectivePermissions === "object"
+    ) {
+      return normalizePermissionsPayload(currentUser.effectivePermissions, {
+        includeAllKeys: true,
+      });
+    }
+    return getEffectivePermissions(currentUser.role, currentUser.permissions);
+  }
+
+  function hasPermission(permissionPath) {
+    const [section, key] = String(permissionPath || "").split(".");
+    if (!section || !key) return false;
+    const effective = getCurrentEffectivePermissions();
+    if (section === "menus") return Boolean(effective.menus[key]);
+    if (section === "features") return Boolean(effective.features[key]);
+    return false;
   }
 
   function getAuthToken() {
@@ -166,11 +452,21 @@
   }
 
   function updateUserBadge() {
-    if (!authUserBadge || !logoutBtn || !authUserName || !authUserRole || !authUserIcon) return;
+    if (
+      !authUserBadge ||
+      !logoutBtn ||
+      !authUserName ||
+      !authUserRole ||
+      !authUserIcon ||
+      !changePasswordBtn
+    ) {
+      return;
+    }
 
     if (!currentUser) {
       authUserBadge.classList.add("hidden");
       authUserBadge.classList.remove("inline-flex");
+      changePasswordBtn.classList.add("hidden");
       logoutBtn.classList.add("hidden");
       return;
     }
@@ -184,6 +480,8 @@
 
     authUserBadge.classList.remove("hidden");
     authUserBadge.classList.add("inline-flex");
+    changePasswordBtn.classList.remove("hidden");
+    changePasswordBtn.classList.add("inline-flex");
     logoutBtn.classList.remove("hidden");
     logoutBtn.classList.add("inline-flex");
   }
@@ -313,6 +611,8 @@
     }
 
     await loadTemplates();
+    await loadBackupSnapshots();
+    await loadDashboardMonitorInfo();
 
     const configVisible = !configSection?.classList.contains("hidden");
     if (configVisible) {
@@ -326,23 +626,40 @@
   }
 
   function switchSection(target) {
-    if (target === "schools" && !isSuperAdmin()) target = "dashboard";
+    if (target === "dashboard" && !canAccessDashboardMenu()) target = "config";
+    if (target === "config" && !canAccessConfigMenu()) target = "dashboard";
+    if (target === "schools" && !canAccessSchoolsMenu()) target = "dashboard";
     if (target === "users" && !canManageUsers()) target = "dashboard";
+    if (target === "audit" && !canViewAuditLogs()) target = "dashboard";
 
-    const showDashboard = target === "dashboard";
-    const showConfig = target === "config";
-    const showSchools = target === "schools" && isSuperAdmin();
+    const fallbackOrder = ["dashboard", "config", "users", "audit", "schools"];
+    const isAllowedTarget = (value) =>
+      (value === "dashboard" && canAccessDashboardMenu()) ||
+      (value === "config" && canAccessConfigMenu()) ||
+      (value === "users" && canManageUsers()) ||
+      (value === "audit" && canViewAuditLogs()) ||
+      (value === "schools" && canAccessSchoolsMenu());
+    if (!isAllowedTarget(target)) {
+      target = fallbackOrder.find((value) => isAllowedTarget(value)) || "dashboard";
+    }
+
+    const showDashboard = target === "dashboard" && canAccessDashboardMenu();
+    const showConfig = target === "config" && canAccessConfigMenu();
+    const showSchools = target === "schools" && canAccessSchoolsMenu();
     const showUsers = target === "users" && canManageUsers();
+    const showAudit = target === "audit" && canViewAuditLogs();
 
     dashboardSection?.classList.toggle("hidden", !showDashboard);
     configSection?.classList.toggle("hidden", !showConfig);
     schoolsSection?.classList.toggle("hidden", !showSchools);
     usersSection?.classList.toggle("hidden", !showUsers);
+    auditSection?.classList.toggle("hidden", !showAudit);
 
     setNavState(navDashboard, showDashboard);
     setNavState(navConfig, showConfig);
     setNavState(navSchools, showSchools);
     setNavState(navUsers, showUsers);
+    setNavState(navAudits, showAudit);
 
     if (showDashboard) setPageTitle("Sinais");
     if (showConfig) {
@@ -357,27 +674,41 @@
       setPageTitle("Usuarios");
       renderUsersTable();
     }
+    if (showAudit) {
+      setPageTitle("Auditoria");
+      renderAuditTable();
+      loadAuditLogs();
+    }
 
     closeSidebarOnMobile();
   }
 
   function applyPermissions() {
+    if (navDashboard) {
+      navDashboard.classList.toggle("hidden", !canAccessDashboardMenu());
+    }
+    if (navConfig) {
+      navConfig.classList.toggle("hidden", !canAccessConfigMenu());
+    }
     if (navSchools) {
-      navSchools.classList.toggle("hidden", !isSuperAdmin());
+      navSchools.classList.toggle("hidden", !canAccessSchoolsMenu());
     }
     if (navUsers) {
       navUsers.classList.toggle("hidden", !canManageUsers());
     }
+    if (navAudits) {
+      navAudits.classList.toggle("hidden", !canViewAuditLogs());
+    }
 
     if (schoolBtn) {
-      schoolBtn.disabled = !isSuperAdmin();
-      schoolBtn.classList.toggle("opacity-50", !isSuperAdmin());
-      schoolBtn.classList.toggle("cursor-not-allowed", !isSuperAdmin());
+      schoolBtn.disabled = !canAccessSchoolsMenu();
+      schoolBtn.classList.toggle("opacity-50", !canAccessSchoolsMenu());
+      schoolBtn.classList.toggle("cursor-not-allowed", !canAccessSchoolsMenu());
     }
     if (userBtn) {
-      userBtn.disabled = !canManageUsers();
-      userBtn.classList.toggle("opacity-50", !canManageUsers());
-      userBtn.classList.toggle("cursor-not-allowed", !canManageUsers());
+      userBtn.disabled = !canCreateUsers();
+      userBtn.classList.toggle("opacity-50", !canCreateUsers());
+      userBtn.classList.toggle("cursor-not-allowed", !canCreateUsers());
     }
 
     const disableWrite = !canWrite();
@@ -386,9 +717,13 @@
       configBtn.classList.toggle("opacity-50", disableWrite);
       configBtn.classList.toggle("cursor-not-allowed", disableWrite);
     }
-    if (saveTemplateBtn) saveTemplateBtn.disabled = disableWrite;
-    if (cloneTemplateBtn) cloneTemplateBtn.disabled = disableWrite;
-    if (importBackupInput) importBackupInput.disabled = disableWrite;
+    if (saveTemplateBtn) saveTemplateBtn.disabled = !canUseTemplates();
+    if (cloneTemplateBtn) cloneTemplateBtn.disabled = !canUseTemplates();
+    if (exportBackupBtn) exportBackupBtn.disabled = !canExportBackup();
+    if (importBackupInput) importBackupInput.disabled = !canImportBackup();
+    if (restoreBackupBtn) restoreBackupBtn.disabled = !canRestoreBackups();
+    if (previewBackupBtn) previewBackupBtn.disabled = !canExportBackup();
+    if (refreshBackupsBtn) refreshBackupsBtn.disabled = !canExportBackup();
   }
 
   function updateConfigClock() {
@@ -486,7 +821,7 @@
   }
 
   function openNewSchoolModal() {
-    if (!isSuperAdmin()) {
+    if (!canAccessSchoolsMenu()) {
       alert("Apenas superadmin pode gerenciar escolas.");
       return;
     }
@@ -501,7 +836,7 @@
   }
 
   function openEditSchoolModal(school) {
-    if (!isSuperAdmin()) return;
+    if (!canAccessSchoolsMenu()) return;
     if (!schoolForm) return;
 
     if (schoolEditId) schoolEditId.value = String(school.id);
@@ -512,6 +847,17 @@
     if (schoolModalTitle) schoolModalTitle.textContent = "Editar Escola";
 
     openSchoolModal();
+  }
+
+  async function redirectToSchool(school) {
+    if (!school?.id) return;
+    if (school.active === false) {
+      alert("Esta escola esta inativa. Ative a escola para acessar configuracoes.");
+      return;
+    }
+
+    await setCurrentSchoolId(String(school.id));
+    switchSection("config");
   }
 
   function buildSchoolOptions(select, selectedSchoolId) {
@@ -586,6 +932,9 @@
         </td>
         <td class="px-4 py-3 text-center">
           <div class="inline-flex items-center gap-3">
+            <button type="button" data-action="redirect" class="text-emerald-600 transition hover:text-emerald-800" title="Acessar escola">
+              <i class="fas fa-arrow-right"></i>
+            </button>
             <button type="button" data-action="edit" class="text-blue-600 transition hover:text-blue-800" title="Editar">
               <i class="fas fa-pen"></i>
             </button>
@@ -595,6 +944,10 @@
           </div>
         </td>
       `;
+
+      tr.querySelector('[data-action="redirect"]')?.addEventListener("click", () => {
+        redirectToSchool(school);
+      });
 
       tr.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
         openEditSchoolModal(school);
@@ -633,10 +986,12 @@
 
       await syncSchoolSelectors();
       renderSchoolsTable();
+      buildAuditSchoolFilter();
     } catch (err) {
       console.error("Erro ao carregar escolas:", err);
       schools = [];
       renderSchoolsTable();
+      buildAuditSchoolFilter();
       buildSchoolOptions(dashboardSchoolSelect, "");
       buildSchoolOptions(configSchoolSelect, "");
       await setCurrentSchoolId("", { dispatch: true });
@@ -682,7 +1037,7 @@
 
   async function saveSchool(event) {
     event.preventDefault();
-    if (!isSuperAdmin()) {
+    if (!canAccessSchoolsMenu()) {
       alert("Apenas superadmin pode gerenciar escolas.");
       return;
     }
@@ -728,7 +1083,7 @@
   }
 
   async function deleteSchool(school) {
-    if (!isSuperAdmin()) return;
+    if (!canAccessSchoolsMenu()) return;
     if (!school?.id) return;
     if (!confirm(`Excluir a escola "${school.name}"? Ela ficara inativa.`)) return;
 
@@ -762,6 +1117,25 @@
     setTimeout(() => {
       userModal.classList.add("hidden");
       userModal.classList.remove("flex");
+    }, 200);
+  }
+
+  function openChangePasswordModal() {
+    if (!changePasswordModal || !changePasswordModalContent || !changePasswordForm) return;
+    changePasswordForm.reset();
+    changePasswordModal.classList.remove("hidden");
+    changePasswordModal.classList.add("flex");
+    setTimeout(() => {
+      changePasswordModalContent.classList.remove("scale-95", "opacity-0");
+    }, 30);
+  }
+
+  function closeChangePasswordModal() {
+    if (!changePasswordModal || !changePasswordModalContent) return;
+    changePasswordModalContent.classList.add("scale-95", "opacity-0");
+    setTimeout(() => {
+      changePasswordModal.classList.add("hidden");
+      changePasswordModal.classList.remove("flex");
     }, 200);
   }
 
@@ -844,9 +1218,177 @@
     userSchoolSelect.disabled = isSuperAdmin() ? managedSchools.length === 0 : true;
   }
 
+  function buildUserPermissionsGrid(role, selectedPermissions = null) {
+    if (!userPermissionsGrid) return;
+
+    const defaultsForRole = getRoleDefaultPermissions(role);
+    const normalizedSelected = normalizePermissionsPayload(selectedPermissions || {});
+    userPermissionsGrid.innerHTML = "";
+
+    const selectedMenus = {};
+    const menuWrapper = document.createElement("div");
+    menuWrapper.className =
+      "rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900";
+
+    const menuTitle = document.createElement("p");
+    menuTitle.className =
+      "mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
+    menuTitle.textContent = "Menus";
+    menuWrapper.appendChild(menuTitle);
+
+    const menuList = document.createElement("div");
+    menuList.className = "space-y-2";
+
+    PERMISSION_KEYS.menus.forEach((menuKey) => {
+      const roleAllowsMenu = Boolean(defaultsForRole.menus[menuKey]);
+      const hasCustom = Object.prototype.hasOwnProperty.call(normalizedSelected.menus, menuKey);
+      const checked = roleAllowsMenu && (hasCustom ? normalizedSelected.menus[menuKey] : true);
+      selectedMenus[menuKey] = checked;
+
+      const label = document.createElement("label");
+      label.className = "flex items-center gap-2 text-xs";
+
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.id = `perm_menus_${menuKey}`;
+      input.dataset.section = "menus";
+      input.dataset.key = menuKey;
+      input.dataset.roleAllowed = roleAllowsMenu ? "true" : "false";
+      input.checked = checked;
+      input.disabled = !roleAllowsMenu;
+      input.className =
+        "h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40";
+
+      const span = document.createElement("span");
+      span.textContent = PERMISSION_LABELS.menus[menuKey] || menuKey;
+
+      label.appendChild(input);
+      label.appendChild(span);
+      menuList.appendChild(label);
+    });
+
+    menuWrapper.appendChild(menuList);
+    userPermissionsGrid.appendChild(menuWrapper);
+
+    const featuresWrapper = document.createElement("div");
+    featuresWrapper.className =
+      "rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900";
+
+    const featuresTitle = document.createElement("p");
+    featuresTitle.className =
+      "mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
+    featuresTitle.textContent = "Funcoes por Menu";
+    featuresWrapper.appendChild(featuresTitle);
+
+    const featuresList = document.createElement("div");
+    featuresList.className = "space-y-3";
+
+    PERMISSION_MENU_GROUPS.forEach((group) => {
+      const groupBlock = document.createElement("div");
+      groupBlock.className = "rounded-lg border border-slate-200/80 p-2 dark:border-slate-700/80";
+
+      const groupTitle = document.createElement("p");
+      groupTitle.className = "mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+      groupTitle.textContent = PERMISSION_LABELS.menus[group.menu] || group.menu;
+      groupBlock.appendChild(groupTitle);
+
+      if (!group.features.length) {
+        const text = document.createElement("p");
+        text.className = "text-xs text-slate-500 dark:text-slate-400";
+        text.textContent = "Sem funcoes extras neste menu.";
+        groupBlock.appendChild(text);
+        featuresList.appendChild(groupBlock);
+        return;
+      }
+
+      const featureItems = document.createElement("div");
+      featureItems.className = "space-y-2";
+
+      group.features.forEach((featureKey) => {
+        const roleAllowsFeature = Boolean(defaultsForRole.features[featureKey]);
+        const hasCustom = Object.prototype.hasOwnProperty.call(
+          normalizedSelected.features,
+          featureKey
+        );
+        const checkedByCustomOrDefault = hasCustom ? normalizedSelected.features[featureKey] : true;
+        const checked = roleAllowsFeature && selectedMenus[group.menu] && checkedByCustomOrDefault;
+
+        const label = document.createElement("label");
+        label.className = "flex items-center gap-2 text-xs";
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.id = `perm_features_${featureKey}`;
+        input.dataset.section = "features";
+        input.dataset.key = featureKey;
+        input.dataset.roleAllowed = roleAllowsFeature ? "true" : "false";
+        input.dataset.menuKey = group.menu;
+        input.checked = checked;
+        input.disabled = !roleAllowsFeature || !selectedMenus[group.menu];
+        input.className =
+          "h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40";
+
+        const span = document.createElement("span");
+        span.textContent = PERMISSION_LABELS.features[featureKey] || featureKey;
+
+        label.appendChild(input);
+        label.appendChild(span);
+        featureItems.appendChild(label);
+      });
+
+      groupBlock.appendChild(featureItems);
+      featuresList.appendChild(groupBlock);
+    });
+
+    featuresWrapper.appendChild(featuresList);
+    userPermissionsGrid.appendChild(featuresWrapper);
+
+    const syncFeatureAvailability = () => {
+      const menuSelection = normalizePermissionsPayload(collectUserPermissionsFromForm());
+      PERMISSION_MENU_GROUPS.forEach((group) => {
+        const menuIsChecked = Boolean(menuSelection.menus[group.menu]);
+        group.features.forEach((featureKey) => {
+          const featureInput = userPermissionsGrid.querySelector(
+            `input[data-section="features"][data-key="${featureKey}"]`
+          );
+          if (!featureInput) return;
+          const roleAllows = featureInput.dataset.roleAllowed === "true";
+          const enabled = roleAllows && menuIsChecked;
+          if (!enabled) featureInput.checked = false;
+          featureInput.disabled = !enabled;
+        });
+      });
+    };
+
+    userPermissionsGrid
+      .querySelectorAll('input[type="checkbox"][data-section="menus"][data-key]')
+      .forEach((input) => input.addEventListener("change", syncFeatureAvailability));
+
+    syncFeatureAvailability();
+  }
+
+  function collectUserPermissionsFromForm() {
+    const collected = { menus: {}, features: {} };
+    if (!userPermissionsGrid) return collected;
+
+    userPermissionsGrid
+      .querySelectorAll('input[type="checkbox"][data-section][data-key]')
+      .forEach((checkbox) => {
+        const section = checkbox.dataset.section;
+        const key = checkbox.dataset.key;
+        const roleAllowed = checkbox.dataset.roleAllowed === "true";
+        if (!section || !key) return;
+        if (!roleAllowed) return;
+        if (!Object.prototype.hasOwnProperty.call(collected, section)) return;
+        collected[section][key] = Boolean(checkbox.checked);
+      });
+
+    return collected;
+  }
+
   function openNewUserModal() {
-    if (!canManageUsers()) {
-      alert("Seu perfil nao pode gerenciar usuarios.");
+    if (!canCreateUsers()) {
+      alert("Seu perfil nao pode criar usuarios.");
       return;
     }
     if (!userForm) return;
@@ -857,12 +1399,17 @@
     if (userPasswordInput) userPasswordInput.required = true;
     if (userActiveInput) userActiveInput.checked = true;
     buildUserRoleOptions(ROLE_ADMIN_ESCOLA);
+    buildUserPermissionsGrid(ROLE_ADMIN_ESCOLA, null);
     syncUserSchoolField(String(currentUser?.schoolId || ""));
     openUserModal();
   }
 
   function openEditUserModal(user) {
     if (!canManageUsers()) return;
+    if (!canManageTargetUser(user) || !hasPermission("features.users_edit")) {
+      alert("Sem permissao para editar este usuario.");
+      return;
+    }
     if (!userForm) return;
 
     if (userEditId) userEditId.value = String(user.id);
@@ -876,6 +1423,7 @@
     if (userModalTitle) userModalTitle.textContent = "Editar Usuario";
 
     buildUserRoleOptions(user.role || ROLE_ADMIN_ESCOLA);
+    buildUserPermissionsGrid(user.role || ROLE_ADMIN_ESCOLA, user.permissions || null);
     syncUserSchoolField(String(user.schoolId || ""));
     openUserModal();
   }
@@ -883,6 +1431,14 @@
   function getSchoolNameById(schoolId) {
     const found = schools.find((school) => String(school.id) === String(schoolId));
     return found?.name || "-";
+  }
+
+  function canManageTargetUser(user) {
+    if (!currentUser || !user) return false;
+    if (isSuperAdmin()) return true;
+    if (!isSchoolAdmin()) return false;
+    if (user.role === ROLE_SUPERADMIN) return false;
+    return String(user.schoolId || "") === String(currentUser.schoolId || "");
   }
 
   function renderUsersTable() {
@@ -916,6 +1472,14 @@
       const tr = document.createElement("tr");
       const schoolName =
         user.schoolName || (user.schoolId ? getSchoolNameById(user.schoolId) : "Todas");
+      const canManage = canManageTargetUser(user);
+      const isSelf = Number(user.id) === Number(currentUser?.id);
+      const canEdit = canManage && hasPermission("features.users_edit");
+      const canToggleActive = canManage && hasPermission("features.users_disable") && !isSelf;
+      const canResetPassword =
+        canManage && hasPermission("features.users_reset_password") && isSuperAdmin() && !isSelf;
+      const deactivateLabel = user.active === false ? "Reativar" : "Desativar";
+      const deactivateIcon = user.active === false ? "fa-user-check" : "fa-user-slash";
 
       tr.innerHTML = `
         <td class="px-4 py-3 font-medium">${user.name || "-"}</td>
@@ -932,14 +1496,40 @@
           </span>
         </td>
         <td class="px-4 py-3 text-center">
-          <button type="button" data-action="edit" class="text-blue-600 transition hover:text-blue-800" title="Editar">
-            <i class="fas fa-pen"></i>
-          </button>
+          <div class="inline-flex items-center gap-3">
+            ${
+              canEdit
+                ? `<button type="button" data-action="edit" class="text-blue-600 transition hover:text-blue-800" title="Editar">
+                     <i class="fas fa-pen"></i>
+                   </button>`
+                : `<span class="text-xs text-slate-400">Sem permissao</span>`
+            }
+            ${
+              canToggleActive
+                ? `<button type="button" data-action="toggle-active" class="text-amber-600 transition hover:text-amber-800" title="${deactivateLabel}">
+                     <i class="fas ${deactivateIcon}"></i>
+                   </button>`
+                : ""
+            }
+            ${
+              canResetPassword
+                ? `<button type="button" data-action="reset-password" class="text-violet-600 transition hover:text-violet-800" title="Reset de senha">
+                     <i class="fas fa-key"></i>
+                   </button>`
+                : ""
+            }
+          </div>
         </td>
       `;
 
       tr.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
         openEditUserModal(user);
+      });
+      tr.querySelector('[data-action="toggle-active"]')?.addEventListener("click", () => {
+        toggleUserActive(user);
+      });
+      tr.querySelector('[data-action="reset-password"]')?.addEventListener("click", () => {
+        resetUserPassword(user);
       });
 
       usersTableBody.appendChild(tr);
@@ -951,6 +1541,7 @@
     if (!canManageUsers()) {
       users = [];
       renderUsersTable();
+      buildAuditUserFilter();
       return;
     }
 
@@ -973,9 +1564,11 @@
       users = Array.isArray(data) ? data : [];
       users.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
       renderUsersTable();
+      buildAuditUserFilter();
     } catch (err) {
       console.error("Erro ao carregar usuarios:", err);
       users = [];
+      buildAuditUserFilter();
       usersTableBody.innerHTML = `
         <tr>
           <td colspan="6" class="py-6 text-center text-red-600">
@@ -1004,10 +1597,30 @@
     }
 
     const editId = userEditId?.value || "";
+    if (editId && !hasPermission("features.users_edit")) {
+      alert("Seu perfil nao pode editar usuarios.");
+      return;
+    }
+    if (!editId && !hasPermission("features.users_create")) {
+      alert("Seu perfil nao pode criar usuarios.");
+      return;
+    }
+    if (editId) {
+      const currentEditUser = users.find((item) => String(item.id) === String(editId));
+      if (currentEditUser && !canManageTargetUser(currentEditUser)) {
+        alert("Sem permissao para editar este usuario.");
+        return;
+      }
+    }
     const name = userNameInput.value.trim();
     const email = userEmailInput.value.trim().toLowerCase();
     const password = userPasswordInput.value;
     const role = userRoleInput.value;
+
+    if (editId && password.trim() && !isSuperAdmin()) {
+      alert("Apenas superadmin pode resetar senha de outros usuarios.");
+      return;
+    }
 
     if (!name || !email) {
       alert("Informe nome e email.");
@@ -1043,6 +1656,7 @@
     if (password.trim()) {
       payload.password = password;
     }
+    payload.permissions = collectUserPermissionsFromForm();
 
     const url = editId ? `${API_BASE}/auth/users/${editId}` : `${API_BASE}/auth/users`;
     const method = editId ? "PATCH" : "POST";
@@ -1065,6 +1679,467 @@
     } catch (err) {
       console.error("Erro ao salvar usuario:", err);
       alert("Erro ao salvar usuario.");
+    }
+  }
+
+  async function toggleUserActive(user) {
+    if (!user?.id) return;
+    if (!canManageTargetUser(user)) {
+      alert("Sem permissao para alterar este usuario.");
+      return;
+    }
+
+    const nextActive = user.active === false;
+    const actionLabel = nextActive ? "reativar" : "desativar";
+    if (!confirm(`Deseja ${actionLabel} o usuario "${user.name}"?`)) return;
+
+    try {
+      const endpoint = nextActive
+        ? `${API_BASE}/auth/users/${user.id}`
+        : `${API_BASE}/auth/users/${user.id}`;
+      const method = nextActive ? "PATCH" : "DELETE";
+      const payload = nextActive ? { active: true } : null;
+
+      const res = await apiFetch(endpoint, {
+        method,
+        headers: payload ? { "Content-Type": "application/json" } : undefined,
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "toggle-user-error");
+        throw new Error(reason);
+      }
+
+      await loadUsers();
+      alert(`Usuario ${nextActive ? "reativado" : "desativado"} com sucesso.`);
+    } catch (error) {
+      console.error("Erro ao alterar status do usuario:", error);
+      alert("Erro ao alterar status do usuario.");
+    }
+  }
+
+  async function resetUserPassword(user) {
+    if (!isSuperAdmin() || !user?.id) return;
+    const newPassword = prompt(`Nova senha para "${user.name}":`);
+    if (!newPassword) return;
+    if (newPassword.length < 6) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/users/${user.id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword }),
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "reset-password-error");
+        throw new Error(reason);
+      }
+      alert("Senha resetada com sucesso.");
+    } catch (error) {
+      console.error("Erro ao resetar senha:", error);
+      alert("Erro ao resetar senha.");
+    }
+  }
+
+  function summarizeSchedule(scheduleObject) {
+    const source = scheduleObject && typeof scheduleObject === "object" ? scheduleObject : {};
+    return {
+      morning: Array.isArray(source.morning) ? source.morning.length : 0,
+      afternoon: Array.isArray(source.afternoon) ? source.afternoon.length : 0,
+      afternoonFriday: Array.isArray(source.afternoonFriday) ? source.afternoonFriday.length : 0,
+    };
+  }
+
+  function formatScheduleSummary(summary) {
+    return `Manha: ${summary.morning} | Tarde: ${summary.afternoon} | Sexta: ${summary.afternoonFriday}`;
+  }
+
+  async function loadBackupSnapshots() {
+    if (!backupSnapshotSelect) return;
+    const schoolId = getCurrentSchoolId();
+    backupSnapshots = [];
+    backupSnapshotSelect.innerHTML = `<option value="">Backups automaticos</option>`;
+
+    if (!schoolId) {
+      if (previewBackupBtn) previewBackupBtn.disabled = true;
+      if (restoreBackupBtn) restoreBackupBtn.disabled = !canWrite();
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_BASE}/schools/${schoolId}/backups?limit=40`);
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "fetch-backups-error");
+        throw new Error(reason);
+      }
+
+      const data = await res.json();
+      backupSnapshots = Array.isArray(data) ? data : [];
+      backupSnapshots.forEach((backup) => {
+        const option = document.createElement("option");
+        option.value = String(backup.id);
+        const createdAt = new Date(backup.createdAt).toLocaleString("pt-BR");
+        option.textContent = `${createdAt} - ${backup.trigger || "manual"} (${formatScheduleSummary(
+          backup.summary || summarizeSchedule(backup.schedule || {})
+        )})`;
+        backupSnapshotSelect.appendChild(option);
+      });
+      backupSnapshotSelect.disabled = backupSnapshots.length === 0;
+      if (previewBackupBtn) previewBackupBtn.disabled = backupSnapshots.length === 0;
+      if (restoreBackupBtn) restoreBackupBtn.disabled = backupSnapshots.length === 0 || !canWrite();
+    } catch (error) {
+      console.error("Erro ao carregar backups automaticos:", error);
+      backupSnapshotSelect.disabled = true;
+      if (previewBackupBtn) previewBackupBtn.disabled = true;
+      if (restoreBackupBtn) restoreBackupBtn.disabled = true;
+    }
+  }
+
+  function getSelectedBackupId() {
+    const backupId = Number.parseInt(String(backupSnapshotSelect?.value || ""), 10);
+    return Number.isInteger(backupId) && backupId > 0 ? backupId : null;
+  }
+
+  async function previewSelectedBackup() {
+    const schoolId = getCurrentSchoolId();
+    const backupId = getSelectedBackupId();
+    if (!schoolId || !backupId) {
+      alert("Selecione um backup.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_BASE}/schools/${schoolId}/backups/${backupId}`);
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "preview-backup-error");
+        throw new Error(reason);
+      }
+      const backup = await res.json();
+      const summary = summarizeSchedule(backup.schedule);
+      const schoolName = schools.find((item) => String(item.id) === String(schoolId))?.name || schoolId;
+      alert(
+        `Preview do backup #${backup.id}\n\nEscola: ${schoolName}\nGerado em: ${new Date(
+          backup.createdAt
+        ).toLocaleString("pt-BR")}\nTipo: ${backup.trigger || "-"}\n\n${formatScheduleSummary(summary)}`
+      );
+    } catch (error) {
+      console.error("Erro ao carregar preview do backup:", error);
+      alert("Erro ao carregar preview do backup.");
+    }
+  }
+
+  async function restoreSelectedBackup() {
+    if (!canWrite()) {
+      alert("Seu perfil e somente leitura.");
+      return;
+    }
+
+    const schoolId = getCurrentSchoolId();
+    const backupId = getSelectedBackupId();
+    if (!schoolId || !backupId) {
+      alert("Selecione um backup.");
+      return;
+    }
+
+    try {
+      const previewRes = await apiFetch(`${API_BASE}/schools/${schoolId}/backups/${backupId}`);
+      if (!previewRes.ok) {
+        const reason = await readApiErrorMessage(previewRes, "preview-backup-error");
+        throw new Error(reason);
+      }
+      const preview = await previewRes.json();
+      const summary = summarizeSchedule(preview.schedule);
+
+      if (
+        !confirm(
+          `Restaurar este backup?\n\n${formatScheduleSummary(summary)}\n\nIsso vai substituir os horarios atuais.`
+        )
+      ) {
+        return;
+      }
+
+      const restoreRes = await apiFetch(`${API_BASE}/schools/${schoolId}/restore-backup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backupId }),
+      });
+      if (!restoreRes.ok) {
+        const reason = await readApiErrorMessage(restoreRes, "restore-selected-backup-error");
+        throw new Error(reason);
+      }
+
+      await loadConfigSchedule();
+      await loadBackupSnapshots();
+      window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
+      alert("Backup restaurado com sucesso.");
+    } catch (error) {
+      console.error("Erro ao restaurar backup selecionado:", error);
+      alert("Erro ao restaurar backup.");
+    }
+  }
+
+  function buildAuditSchoolFilter() {
+    if (!auditSchoolFilter) return;
+    const currentValue = String(auditSchoolFilter.value || "");
+    const options = isSuperAdmin()
+      ? getActiveSchools()
+      : getActiveSchools().filter(
+          (school) => String(school.id) === String(currentUser?.schoolId || "")
+        );
+
+    auditSchoolFilter.innerHTML = `<option value="">Todas escolas</option>`;
+    options.forEach((school) => {
+      const option = document.createElement("option");
+      option.value = String(school.id);
+      option.textContent = school.name || "Sem nome";
+      auditSchoolFilter.appendChild(option);
+    });
+
+    const hasCurrent = options.some((school) => String(school.id) === currentValue);
+    if (hasCurrent) {
+      auditSchoolFilter.value = currentValue;
+    } else if (!isSuperAdmin() && currentUser?.schoolId) {
+      auditSchoolFilter.value = String(currentUser.schoolId);
+    } else {
+      auditSchoolFilter.value = "";
+    }
+    auditSchoolFilter.disabled = !isSuperAdmin();
+  }
+
+  function buildAuditUserFilter() {
+    if (!auditUserFilter) return;
+    const previousValue = String(auditUserFilter.value || "");
+    auditUserFilter.innerHTML = `<option value="">Todos usuarios</option>`;
+
+    const sourceUsers =
+      users.length > 0
+        ? users
+        : currentUser
+          ? [
+              {
+                id: currentUser.id,
+                name: currentUser.name || currentUser.email || "Usuario atual",
+              },
+            ]
+          : [];
+
+    sourceUsers.forEach((user) => {
+      const option = document.createElement("option");
+      option.value = String(user.id);
+      option.textContent = user.name || user.email || `Usuario ${user.id}`;
+      auditUserFilter.appendChild(option);
+    });
+
+    const exists = sourceUsers.some((user) => String(user.id) === previousValue);
+    auditUserFilter.value = exists ? previousValue : "";
+  }
+
+  function renderAuditTable() {
+    if (!auditTableBody) return;
+
+    if (!canViewAuditLogs()) {
+      auditTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="py-6 text-center text-slate-400">Sem permissao para visualizar auditoria</td>
+        </tr>
+      `;
+      return;
+    }
+
+    if (!auditLogs.length) {
+      auditTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="py-6 text-center text-slate-400">Nenhum log encontrado</td>
+        </tr>
+      `;
+      return;
+    }
+
+    auditTableBody.innerHTML = "";
+    auditLogs.forEach((log) => {
+      const tr = document.createElement("tr");
+      const whenText = log.createdAt ? new Date(log.createdAt).toLocaleString("pt-BR") : "-";
+      const detailParts = [];
+      if (log.resourceId) detailParts.push(`ID: ${log.resourceId}`);
+      if (log.ip) detailParts.push(`IP: ${log.ip}`);
+      if (log.meta && typeof log.meta === "object") {
+        const keys = Object.keys(log.meta).slice(0, 2);
+        keys.forEach((key) => detailParts.push(`${key}: ${String(log.meta[key])}`));
+      }
+      tr.innerHTML = `
+        <td class="px-4 py-3 whitespace-nowrap">${whenText}</td>
+        <td class="px-4 py-3">${log.userName || log.userId || "-"}</td>
+        <td class="px-4 py-3">${log.schoolName || log.schoolId || "-"}</td>
+        <td class="px-4 py-3"><code class="text-xs">${log.action || "-"}</code></td>
+        <td class="px-4 py-3">${log.resource || "-"}</td>
+        <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${detailParts.join(" | ") || "-"}</td>
+      `;
+      auditTableBody.appendChild(tr);
+    });
+  }
+
+  async function loadAuditLogs() {
+    if (!auditTableBody || !canViewAuditLogs()) return;
+
+    auditTableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="py-6 text-center text-slate-500">Carregando logs...</td>
+      </tr>
+    `;
+
+    const params = new URLSearchParams();
+    params.set("limit", "200");
+    if (auditSchoolFilter?.value) params.set("schoolId", auditSchoolFilter.value);
+    if (auditUserFilter?.value) params.set("userId", auditUserFilter.value);
+    if (auditActionFilter?.value?.trim()) params.set("action", auditActionFilter.value.trim());
+    if (auditFromDate?.value) params.set("from", auditFromDate.value);
+    if (auditToDate?.value) params.set("to", auditToDate.value);
+
+    try {
+      const res = await apiFetch(`${API_BASE}/audit-logs?${params.toString()}`);
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "fetch-audit-logs-error");
+        throw new Error(reason);
+      }
+      const data = await res.json();
+      auditLogs = Array.isArray(data) ? data : [];
+      renderAuditTable();
+    } catch (error) {
+      console.error("Erro ao carregar logs de auditoria:", error);
+      auditLogs = [];
+      auditTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="py-6 text-center text-red-600">Erro ao carregar logs</td>
+        </tr>
+      `;
+    }
+  }
+
+  async function handleChangePasswordSubmit(event) {
+    event.preventDefault();
+    if (!currentPasswordInput || !newPasswordInput || !confirmPasswordInput) return;
+
+    const currentPassword = currentPasswordInput.value;
+    const newPassword = newPasswordInput.value;
+    const confirmPassword = confirmPasswordInput.value;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      alert("Preencha todos os campos.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      alert("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert("A confirmacao da senha nao confere.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "change-password-error");
+        throw new Error(reason);
+      }
+      closeChangePasswordModal();
+      alert("Senha alterada com sucesso.");
+    } catch (error) {
+      console.error("Erro ao alterar senha:", error);
+      alert("Erro ao alterar senha. Verifique sua senha atual.");
+    }
+  }
+
+  async function loadDashboardMonitorInfo() {
+    if (!dashboardDbStatus || !dashboardDbLatency || !dashboardOpenAlerts || !dashboardAlertList) return;
+
+    try {
+      const healthRes = await fetch(`${API_BASE}/health`);
+      if (!healthRes.ok) throw new Error("health-check-failed");
+      const health = await healthRes.json();
+      const dbStatus = health?.database?.status === "up" ? "Banco online" : "Banco indisponivel";
+      dashboardDbStatus.textContent = dbStatus;
+      dashboardDbStatus.className =
+        health?.database?.status === "up"
+          ? "mt-2 text-xl font-extrabold text-emerald-600"
+          : "mt-2 text-xl font-extrabold text-rose-600";
+      const latency = Number.isFinite(health?.database?.latencyMs)
+        ? `${health.database.latencyMs} ms`
+        : "--";
+      dashboardDbLatency.textContent = `Latencia: ${latency}`;
+    } catch (_error) {
+      dashboardDbStatus.textContent = "Banco indisponivel";
+      dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-rose-600";
+      dashboardDbLatency.textContent = "Latencia: --";
+    }
+
+    if (!currentUser) {
+      dashboardOpenAlerts.textContent = "--";
+      dashboardSchoolsWithoutSchedule.textContent = "--";
+      dashboardMonitorCheckedAt.textContent = "Ultima verificacao: --";
+      dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Faca login para visualizar alertas.</li>`;
+      return;
+    }
+
+    try {
+      const [monitorRes, alertsRes] = await Promise.all([
+        apiFetch(`${API_BASE}/monitor/status`),
+        apiFetch(`${API_BASE}/alerts?status=open`),
+      ]);
+
+      let monitorPayload = null;
+      if (monitorRes.ok) {
+        monitorPayload = await monitorRes.json();
+      }
+
+      let alerts = [];
+      if (alertsRes.ok) {
+        const data = await alertsRes.json();
+        alerts = Array.isArray(data) ? data : [];
+      }
+
+      dashboardOpenAlerts.textContent = String(alerts.length);
+      const withoutScheduleValue = Number.isFinite(monitorPayload?.schoolsWithoutSchedule)
+        ? monitorPayload.schoolsWithoutSchedule
+        : alerts.filter((item) => item.type === "school_without_schedule").length;
+      if (dashboardSchoolsWithoutSchedule) {
+        dashboardSchoolsWithoutSchedule.textContent = String(withoutScheduleValue);
+      }
+      if (dashboardMonitorCheckedAt) {
+        const checkedAt = monitorPayload?.checkedAt
+          ? new Date(monitorPayload.checkedAt).toLocaleString("pt-BR")
+          : new Date().toLocaleString("pt-BR");
+        dashboardMonitorCheckedAt.textContent = `Ultima verificacao: ${checkedAt}`;
+      }
+
+      if (!alerts.length) {
+        dashboardAlertList.innerHTML = `<li class="rounded-xl bg-emerald-100 px-3 py-2 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Nenhum alerta aberto.</li>`;
+        return;
+      }
+
+      dashboardAlertList.innerHTML = "";
+      alerts.slice(0, 5).forEach((alertItem) => {
+        const li = document.createElement("li");
+        const severityClass =
+          alertItem.severity === "critical"
+            ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+            : alertItem.severity === "warning"
+              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+              : "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300";
+        li.className = `rounded-xl px-3 py-2 ${severityClass}`;
+        li.textContent = `${alertItem.schoolName || "Global"}: ${alertItem.message || "-"}`;
+        dashboardAlertList.appendChild(li);
+      });
+    } catch (error) {
+      console.error("Erro ao carregar monitoramento do dashboard:", error);
+      dashboardAlertList.innerHTML = `<li class="rounded-xl bg-rose-100 px-3 py-2 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Erro ao carregar alertas.</li>`;
     }
   }
 
@@ -1405,8 +2480,17 @@
     try {
       const text = await file.text();
       const payload = JSON.parse(text);
+      const parsedSchedule =
+        payload && typeof payload === "object" && payload.schedule ? payload.schedule : payload;
+      const summary = summarizeSchedule(parsedSchedule);
 
-      if (!confirm("Importar backup? Os horarios atuais da escola serao substituidos.")) {
+      if (
+        !confirm(
+          `Importar backup?\n\nPreview: ${formatScheduleSummary(
+            summary
+          )}\n\nOs horarios atuais da escola serao substituidos.`
+        )
+      ) {
         event.target.value = "";
         return;
       }
@@ -1422,6 +2506,7 @@
       }
 
       await loadConfigSchedule();
+      await loadBackupSnapshots();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
       alert("Backup importado com sucesso.");
     } catch (err) {
@@ -1466,6 +2551,7 @@
       hideAuthOverlay();
       await loadSchools();
       await loadUsers();
+      await loadDashboardMonitorInfo();
       switchSection("dashboard");
       broadcastAuthChanged(true);
       if (loginForm) loginForm.reset();
@@ -1501,6 +2587,7 @@
       setCurrentUser(data.user);
       hideAuthOverlay();
       broadcastAuthChanged(true);
+      await loadDashboardMonitorInfo();
       return true;
     } catch (err) {
       console.error("Sessao invalida:", err);
@@ -1518,8 +2605,13 @@
     schools = [];
     templates = [];
     users = [];
+    auditLogs = [];
+    backupSnapshots = [];
     renderSchoolsTable();
     renderUsersTable();
+    renderAuditTable();
+    buildAuditSchoolFilter();
+    buildAuditUserFilter();
     if (scheduleTable) {
       scheduleTable.innerHTML = `
         <tr>
@@ -1531,6 +2623,7 @@
     }
     showAuthOverlay();
     broadcastAuthChanged(false);
+    loadDashboardMonitorInfo();
   }
 
   function bindEvents() {
@@ -1558,6 +2651,10 @@
       event.preventDefault();
       switchSection("users");
     });
+    navAudits?.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchSection("audit");
+    });
 
     dashboardSchoolSelect?.addEventListener("change", (event) => {
       setCurrentSchoolId(event.target.value);
@@ -1579,6 +2676,8 @@
     userBtn?.addEventListener("click", openNewUserModal);
     cancelUserBtn?.addEventListener("click", closeUserModal);
     userRoleInput?.addEventListener("change", () => {
+      const snapshot = collectUserPermissionsFromForm();
+      buildUserPermissionsGrid(userRoleInput?.value || ROLE_ADMIN_ESCOLA, snapshot);
       syncUserSchoolField(userSchoolSelect?.value || "");
     });
     userForm?.addEventListener("submit", saveUser);
@@ -1587,6 +2686,18 @@
     cloneTemplateBtn?.addEventListener("click", applySelectedTemplate);
     exportBackupBtn?.addEventListener("click", exportCurrentBackup);
     importBackupInput?.addEventListener("change", importBackupFromFile);
+    refreshBackupsBtn?.addEventListener("click", loadBackupSnapshots);
+    previewBackupBtn?.addEventListener("click", previewSelectedBackup);
+    restoreBackupBtn?.addEventListener("click", restoreSelectedBackup);
+
+    auditApplyFiltersBtn?.addEventListener("click", loadAuditLogs);
+    refreshAuditBtn?.addEventListener("click", loadAuditLogs);
+
+    refreshDashboardMonitorBtn?.addEventListener("click", loadDashboardMonitorInfo);
+
+    changePasswordBtn?.addEventListener("click", openChangePasswordModal);
+    cancelChangePasswordBtn?.addEventListener("click", closeChangePasswordModal);
+    changePasswordForm?.addEventListener("submit", handleChangePasswordSubmit);
 
     loginForm?.addEventListener("submit", handleLoginSubmit);
     logoutBtn?.addEventListener("click", logout);
@@ -1602,19 +2713,26 @@
     userModal?.addEventListener("click", (event) => {
       if (event.target === userModal) closeUserModal();
     });
+    changePasswordModal?.addEventListener("click", (event) => {
+      if (event.target === changePasswordModal) closeChangePasswordModal();
+    });
   }
 
   async function init() {
     bindEvents();
     updateConfigClock();
     setInterval(updateConfigClock, 1000);
+    setInterval(loadDashboardMonitorInfo, 60000);
 
     const authenticated = await restoreSession();
     if (authenticated) {
       await loadSchools();
       await loadUsers();
+      await loadAuditLogs();
+      await loadDashboardMonitorInfo();
       switchSection("dashboard");
     } else {
+      await loadDashboardMonitorInfo();
       switchSection("dashboard");
     }
   }
