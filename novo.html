@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SinalTech</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <link rel="stylesheet" href="./assets/css/index.css" />
+  <link rel="icon" href="./assets/img/logo.ico" type="image/x-icon" />
+  <style>
+
+  </style>
+</head>
+
+<body class="min-h-screen bg-gray-50">
+  <!-- Overlay de carregamento -->
+  <div id="overlayWakeup"
+    class="fixed inset-0 bg-gray-900 bg-opacity-95 flex flex-col items-center justify-center z-50 text-white transition-all duration-700">
+    <div class="text-center space-y-8">
+      <h1 class="text-4xl font-extrabold tracking-wide text-blue-400 animate-pulse">
+        Iniciando o SinalTech...
+      </h1>
+
+      <!-- Indicador de carregamento -->
+      <div class="flex items-center justify-center space-x-3">
+        <div class="w-4 h-4 bg-blue-400 rounded-full animate-bounce"></div>
+        <div class="w-4 h-4 bg-blue-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+        <div class="w-4 h-4 bg-blue-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+      </div>
+
+      <p class="text-lg text-gray-300 font-medium" id="statusWake">
+        Aguardando inicialização da API de sinais...
+      </p>
+
+      <button id="btnWakeOk" disabled
+        class="px-8 py-3 bg-gray-600 rounded-xl text-lg font-semibold shadow-lg transform transition-all duration-300 opacity-60 cursor-not-allowed">
+        OK
+      </button>
+    </div>
+  </div>
+
+  <div class="bg-wave pb-32">
+    <header class="container mx-auto px-4 py-6">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+          <i class="fas fa-bell text-3xl text-blue-600"></i>
+          <h1 class="text-2xl md:text-3xl font-bold text-gray-800">
+            Sinal CAB
+          </h1>
+        </div>
+        <div class="current-time bg-white px-4 py-2 rounded-full shadow-md">
+          <span class="text-lg font-medium text-gray-700" id="currentTime">
+            --:--:--
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <main class="container mx-auto px-4">
+      <div class="bg-white rounded-xl shadow-lg p-6 max-w-4xl mx-auto mb-8">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-bold text-gray-800">
+            Painel de Controle dos Sinais
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6" id="quickInfo">
+          <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+            <h3 class="font-medium text-blue-800">Próximo Sinal</h3>
+            <p class="text-2xl font-bold text-blue-600" id="nextSignalTime">
+              --:--
+            </p>
+            <p class="text-gray-600" id="nextSignalName">Carregando...</p>
+          </div>
+          <div class="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
+            <h3 class="font-medium text-green-800">Sinal Atual</h3>
+            <p class="text-2xl font-bold text-green-600" id="currentSignalTime">
+              --:--
+            </p>
+            <p class="text-gray-600" id="currentSignalName">
+              Nenhum sinal ativo
+            </p>
+          </div>
+        </div>
+
+        <div class="py-4">
+          <div class="space-y-8">
+            <!-- Período Manhã -->
+            <div>
+              <h3 class="text-lg font-semibold text-gray-700 mb-2">Manhã</h3>
+              <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                <thead class="bg-gray-100">
+                  <tr>
+                    <th class="py-3 px-4 text-left font-medium text-gray-700">
+                      Horário
+                    </th>
+                    <th class="py-3 px-4 text-left font-medium text-gray-700">
+                      Sinal
+                    </th>
+                    <th class="py-3 px-4 text-left font-medium text-gray-700">
+                      Música
+                    </th>
+                    <th class="py-3 px-4 text-left font-medium text-gray-700">
+                      Duração
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200" id="scheduleTable-morning">
+                  <!-- Preenchido via JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Período Tarde -->
+            <div>
+              <h3 class="text-lg font-semibold text-gray-700 mb-2">Tarde</h3>
+              <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                <thead class="bg-gray-100">
+                  <tr>
+                    <th class="py-3 px-4 text-left font-medium text-gray-700">
+                      Horário
+                    </th>
+                    <th class="py-3 px-4 text-left font-medium text-gray-700">
+                      Sinal
+                    </th>
+                    <th class="py-3 px-4 text-left font
