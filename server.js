@@ -2769,29 +2769,54 @@ app.get("/favicon.ico", (_req, res) => {
 });
 
 async function startServer() {
-  await ensureEnterpriseSchema();
-  await seedDefaultSuperAdmin();
-  await runMonitoringSweep("startup");
-  await runDailyBackupSweep("daily");
-
-  setInterval(() => {
-    runMonitoringSweep("interval").catch((error) => {
-      console.error("Monitoring sweep error:", error);
-    });
-  }, MONITOR_INTERVAL_MS).unref();
-
-  setInterval(() => {
-    runDailyBackupSweep("daily").catch((error) => {
-      console.error("Daily backup sweep error:", error);
-    });
-  }, DAILY_BACKUP_INTERVAL_MS).unref();
-
+  await initializeApp({ serverless: false });
   app.listen(PORT, () => {
     console.log(`SinalTech API running on port ${PORT}`);
   });
 }
 
-startServer().catch((error) => {
-  console.error("Failed to start server:", error);
-  process.exit(1);
-});
+let startupPromise = null;
+let schedulerStarted = false;
+
+async function initializeApp(options = {}) {
+  const isServerless = options?.serverless === true;
+
+  if (!startupPromise) {
+    startupPromise = (async () => {
+      await ensureEnterpriseSchema();
+      await seedDefaultSuperAdmin();
+    })();
+  }
+
+  await startupPromise;
+
+  if (!isServerless) {
+    await runMonitoringSweep("startup");
+    await runDailyBackupSweep("daily");
+
+    if (!schedulerStarted) {
+      schedulerStarted = true;
+
+      setInterval(() => {
+        runMonitoringSweep("interval").catch((error) => {
+          console.error("Monitoring sweep error:", error);
+        });
+      }, MONITOR_INTERVAL_MS).unref();
+
+      setInterval(() => {
+        runDailyBackupSweep("daily").catch((error) => {
+          console.error("Daily backup sweep error:", error);
+        });
+      }, DAILY_BACKUP_INTERVAL_MS).unref();
+    }
+  }
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error("Failed to start server:", error);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, initializeApp };
