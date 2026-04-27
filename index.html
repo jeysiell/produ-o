@@ -148,7 +148,7 @@
             <p class="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
               SinalTech
             </p>
-            <h2 class="font-display text-2xl font-extrabold">Sinal CAB</h2>
+            <h2 class="font-display text-2xl font-extrabold">Painel Central</h2>
           </div>
           <button
             id="closeSidebar"
@@ -174,11 +174,17 @@
             class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <i class="fas fa-sliders-h"></i>
-            Configurações
+            Configuracoes
+          </a>
+          <a
+            id="navSchools"
+            href="#"
+            class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <i class="fas fa-school"></i>
+            Escolas
           </a>
         </nav>
-
-
       </aside>
 
       <div class="flex flex-1 flex-col">
@@ -232,9 +238,12 @@
 
               <button
                 id="darkToggle"
-                class="rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-semibold transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
+                class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-base text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                aria-label="Alternar tema"
+                title="Alternar tema"
               >
-                🌙
+                <i data-theme-icon="moon" class="fas fa-moon"></i>
+                <i data-theme-icon="sun" class="fas fa-sun hidden text-amber-400"></i>
               </button>
 
               <div
@@ -242,6 +251,27 @@
               >
                 <span id="currentTime">--:--:--</span>
               </div>
+
+              <div
+                id="authUserBadge"
+                class="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold shadow-sm dark:border-slate-700 dark:bg-slate-900"
+              >
+                <i id="authUserIcon" class="fas fa-user-shield text-blue-600 dark:text-sky-300"></i>
+                <span id="authUserName">Usuario</span>
+                <span
+                  id="authUserRole"
+                  class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  perfil
+                </span>
+              </div>
+
+              <button
+                id="logoutBtn"
+                class="hidden rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40"
+              >
+                <i class="fas fa-sign-out-alt mr-1"></i>Sair
+              </button>
             </div>
           </div>
         </header>
@@ -369,6 +399,13 @@
 
                 <div class="flex flex-col gap-3 sm:flex-row">
                   <select
+                    id="dashboardSchoolSelect"
+                    class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+                  >
+                    <option value="">Selecione a escola</option>
+                  </select>
+
+                  <select
                     id="periodFilter"
                     class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
                   >
@@ -417,7 +454,6 @@
             >
               <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-
                   <h3 class="font-display text-xl font-bold">Configurar Horarios</h3>
                 </div>
 
@@ -437,7 +473,14 @@
                 </div>
               </div>
 
-              <div class="mt-5 flex gap-3">
+              <div class="mt-5 flex flex-wrap gap-3">
+                <select
+                  id="configSchoolSelect"
+                  class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+                >
+                  <option value="">Selecione a escola</option>
+                </select>
+
                 <select
                   id="configFilterPeriod"
                   class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
@@ -447,6 +490,45 @@
                   <option value="afternoon">Tarde</option>
                   <option value="afternoonFriday">Tarde de Sexta</option>
                 </select>
+
+                <select
+                  id="templateSelect"
+                  class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+                >
+                  <option value="">Template</option>
+                </select>
+
+                <button
+                  id="saveTemplateBtn"
+                  type="button"
+                  class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                >
+                  <i class="fas fa-save mr-2"></i>Salvar Template
+                </button>
+
+                <button
+                  id="cloneTemplateBtn"
+                  type="button"
+                  class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                >
+                  <i class="fas fa-copy mr-2"></i>Aplicar Template
+                </button>
+
+                <button
+                  id="exportBackupBtn"
+                  type="button"
+                  class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                >
+                  <i class="fas fa-download mr-2"></i>Exportar Backup
+                </button>
+
+                <label
+                  for="importBackupInput"
+                  class="cursor-pointer rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                >
+                  <i class="fas fa-upload mr-2"></i>Importar Backup
+                </label>
+                <input id="importBackupInput" type="file" accept="application/json" class="hidden" />
               </div>
             </section>
 
@@ -472,6 +554,55 @@
                     <tr>
                       <td colspan="6" class="py-6 text-center text-slate-500">
                         Abra a aba de configuracoes para carregar os horarios
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <section id="schoolsSection" class="hidden space-y-6">
+            <section
+              class="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 class="font-display text-xl font-bold">Gerenciar Escolas</h3>
+                  <p class="text-sm text-slate-500 dark:text-slate-400">
+                    Adicione, edite e desative escolas.
+                  </p>
+                </div>
+                <button
+                  id="schoolBtn"
+                  class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                >
+                  <i class="fas fa-plus mr-2"></i>Nova Escola
+                </button>
+              </div>
+            </section>
+
+            <section
+              class="rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-slate-100 text-left dark:bg-slate-800">
+                    <tr>
+                      <th class="px-4 py-3">Nome</th>
+                      <th class="px-4 py-3">Slug</th>
+                      <th class="px-4 py-3">Timezone</th>
+                      <th class="px-4 py-3">Status</th>
+                      <th class="px-4 py-3 text-center">Acoes</th>
+                    </tr>
+                  </thead>
+                  <tbody
+                    id="schoolsTableBody"
+                    class="divide-y divide-slate-200 dark:divide-slate-800"
+                  >
+                    <tr>
+                      <td colspan="5" class="py-6 text-center text-slate-500">
+                        Carregando escolas...
                       </td>
                     </tr>
                   </tbody>
@@ -570,6 +701,130 @@
               Salvar
             </button>
           </div>
+        </form>
+      </div>
+    </div>
+
+    <div
+      id="schoolModal"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/55 px-4"
+    >
+      <div
+        id="schoolModalContent"
+        class="w-full max-w-lg scale-95 rounded-2xl border border-slate-200 bg-white p-6 opacity-0 shadow-2xl transition-all duration-200 dark:border-slate-700 dark:bg-slate-900"
+      >
+        <h3 id="schoolModalTitle" class="mb-4 font-display text-xl font-bold">
+          Nova Escola
+        </h3>
+
+        <form id="schoolForm" class="space-y-4">
+          <input type="hidden" id="schoolEditId" />
+
+          <div>
+            <label class="mb-1 block text-sm font-medium">Nome</label>
+            <input
+              type="text"
+              id="schoolNameInput"
+              required
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1 block text-sm font-medium">Slug</label>
+            <input
+              type="text"
+              id="schoolSlugInput"
+              placeholder="opcional"
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1 block text-sm font-medium">Timezone</label>
+            <input
+              type="text"
+              id="schoolTimezoneInput"
+              value="America/Sao_Paulo"
+              required
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+            />
+          </div>
+
+          <label class="flex items-center gap-2 text-sm font-medium">
+            <input
+              id="schoolActiveInput"
+              type="checkbox"
+              checked
+              class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            Escola ativa
+          </label>
+
+          <div class="flex justify-end gap-3 pt-3">
+            <button
+              type="button"
+              id="cancelSchoolBtn"
+              class="rounded-xl bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+            >
+              Salvar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div
+      id="authOverlay"
+      class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm"
+    >
+      <div
+        class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+      >
+        <div class="mb-6 text-center">
+          <h3 class="font-display text-2xl font-bold">Acesso ao Painel</h3>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Entre com seu usuario para acessar escolas e horarios.
+          </p>
+        </div>
+
+        <form id="loginForm" class="space-y-4">
+          <div>
+            <label class="mb-1 block text-sm font-medium">Email</label>
+            <input
+              id="loginEmail"
+              type="email"
+              required
+              autocomplete="username"
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Senha</label>
+            <input
+              id="loginPassword"
+              type="password"
+              required
+              autocomplete="current-password"
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
+            />
+          </div>
+
+          <p id="loginError" class="hidden rounded-xl bg-red-100 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300"></p>
+
+          <button
+            id="loginSubmitBtn"
+            type="submit"
+            class="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            Entrar
+          </button>
         </form>
       </div>
     </div>

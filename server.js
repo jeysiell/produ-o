@@ -1,0 +1,1782 @@
+const express = require("express");
+const path = require("path");
+const dns = require("dns");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { Pool } = require("pg");
+
+dotenv.config();
+
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+const DATABASE_URL = process.env.DATABASE_URL;
+const JWT_SECRET = process.env.JWT_SECRET || "dev-change-this-secret";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
+const MONITOR_INTERVAL_MS = Number(process.env.MONITOR_INTERVAL_MS) || 300000;
+const DEFAULT_ADMIN_EMAIL = process.env.DEFAULT_ADMIN_EMAIL || "admin@sinaltech.local";
+const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123456";
+const DEFAULT_ADMIN_NAME = process.env.DEFAULT_ADMIN_NAME || "Super Admin";
+
+const ROLE_SUPERADMIN = "superadmin";
+const ROLE_ADMIN_ESCOLA = "admin_escola";
+const ROLE_SOMENTE_LEITURA = "somente_leitura";
+const ALL_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA, ROLE_SOMENTE_LEITURA];
+const WRITE_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA];
+const PERIODS = ["morning", "afternoon", "afternoonFriday"];
+
+function buildDatabaseUrlFromParts() {
+  const host = process.env.DB_HOST;
+  const port = process.env.DB_PORT || "5432";
+  const db = process.env.DB_NAME || "postgres";
+  const user = process.env.DB_USER || "postgres";
+  const password = process.env.DB_PASSWORD;
+
+  if (!host || !password) return null;
+
+  const encodedUser = encodeURIComponent(user);
+  const encodedPassword = encodeURIComponent(password);
+  return `postgresql://${encodedUser}:${encodedPassword}@${host}:${port}/${db}`;
+}
+
+const resolvedDatabaseUrl = DATABASE_URL || buildDatabaseUrlFromParts();
+const dbDnsServers = String(process.env.DB_DNS_SERVERS || "8.8.8.8,1.1.1.1")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+if (!resolvedDatabaseUrl) {
+  console.error(
+    "Missing database config. Set DATABASE_URL or DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD."
+  );
+  process.exit(1);
+}
+
+if (process.env.NODE_ENV === "production" && JWT_SECRET === "dev-change-this-secret") {
+  console.error("Missing JWT_SECRET for production.");
+  process.exit(1);
+}
+
+const shouldUseSsl = !/localhost|127\.0\.0\.1/.test(resolvedDatabaseUrl);
+
+function createLookupWithFallback() {
+  const resolver = new dns.promises.Resolver();
+  if (dbDnsServers.length > 0) {
+    try {
+      resolver.setServers(dbDnsServers);
+    } catch (_err) {
+      // Ignore invalid custom DNS servers and keep defaults.
+    }
+  }
+
+  return (hostname, options, callback) => {
+    dns.lookup(hostname, options, async (nativeErr, address, family) => {
+      if (!nativeErr) {
+        callback(null, address, family);
+        return;
+      }
+
+      const canFallback =
+        dbDnsServers.length > 0 &&
+        ["ENOTFOUND", "EAI_AGAIN", "ETIMEOUT", "ESERVFAIL"].includes(nativeErr.code);
+
+      if (!canFallback) {
+        callback(nativeErr);
+        return;
+      }
+
+      const requestedFamily =
+        typeof options === "number" ? options : Number(options?.family) || 0;
+
+      try {
+        if (requestedFamily === 4) {
+          const ipv4 = await resolver.resolve4(hostname);
+          if (ipv4?.length) return callback(null, ipv4[0], 4);
+        } else if (requestedFamily === 6) {
+          const ipv6 = await resolver.resolve6(hostname);
+          if (ipv6?.length) return callback(null, ipv6[0], 6);
+        } else {
+          const ipv4 = await resolver.resolve4(hostname).catch(() => []);
+          if (ipv4?.length) return callback(null, ipv4[0], 4);
+
+          const ipv6 = await resolver.resolve6(hostname).catch(() => []);
+          if (ipv6?.length) return callback(null, ipv6[0], 6);
+        }
+
+        callback(nativeErr);
+      } catch (_fallbackErr) {
+        callback(nativeErr);
+      }
+    });
+  };
+}
+
+const pool = new Pool({
+  connectionString: resolvedDatabaseUrl,
+  ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
+  lookup: createLookupWithFallback(),
+});
+
+app.disable("x-powered-by");
+app.use(cors());
+app.use(express.json({ limit: "2mb" }));
+
+function slugify(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function toIntId(value) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeTime(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d{2}:\d{2})/);
+  return match ? match[1] : text;
+}
+
+function sanitizeUser(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    schoolId: row.school_id || null,
+    active: row.active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSchool(row) {
+  return {
+    id: String(row.id),
+    name: row.name,
+    slug: row.slug,
+    timezone: row.timezone,
+    active: row.active,
+    createdAt: row.created_at,
+  };
+}
+
+function groupScheduleRows(rows) {
+  const grouped = {
+    morning: [],
+    afternoon: [],
+    afternoonFriday: [],
+  };
+
+  rows.forEach((row) => {
+    if (!PERIODS.includes(row.period)) return;
+    grouped[row.period].push({
+      time: normalizeTime(row.time),
+      name: row.name,
+      music: row.music,
+      duration: Number(row.duration) || 15,
+    });
+  });
+
+  PERIODS.forEach((period) => {
+    grouped[period].sort((a, b) => a.time.localeCompare(b.time));
+  });
+
+  return grouped;
+}
+
+function normalizeSchedulePayload(payload) {
+  const result = {
+    morning: [],
+    afternoon: [],
+    afternoonFriday: [],
+  };
+
+  const source = payload?.schedule && typeof payload.schedule === "object" ? payload.schedule : payload;
+
+  if (!source || typeof source !== "object") {
+    throw new Error("Schedule payload must be an object.");
+  }
+
+  PERIODS.forEach((period) => {
+    const items = Array.isArray(source[period]) ? source[period] : [];
+    result[period] = items.map((item, index) => {
+      const time = normalizeTime(item?.time);
+      const name = String(item?.name || "").trim();
+      const music = String(item?.music || "").trim();
+      const duration = Number.parseInt(item?.duration, 10);
+
+      if (!/^\d{2}:\d{2}$/.test(time)) {
+        throw new Error(`Invalid time at ${period}[${index}].`);
+      }
+      if (!name) {
+        throw new Error(`Missing name at ${period}[${index}].`);
+      }
+      if (!music) {
+        throw new Error(`Missing music at ${period}[${index}].`);
+      }
+
+      return {
+        time,
+        name,
+        music,
+        duration: Number.isFinite(duration) && duration > 0 ? duration : 15,
+      };
+    });
+  });
+
+  return result;
+}
+
+function sendInternalError(res, errorCode, err) {
+  const payload = { error: errorCode };
+  if (process.env.NODE_ENV !== "production") {
+    payload.detail = {
+      code: err?.code || null,
+      message: err?.message || null,
+    };
+  }
+  res.status(500).json(payload);
+}
+
+function getRequestMeta(req) {
+  return {
+    ip:
+      String(req.headers["x-forwarded-for"] || "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)[0] || req.socket?.remoteAddress || null,
+    userAgent: req.get("user-agent") || null,
+  };
+}
+
+async function writeAuditLog(entry, client = pool) {
+  try {
+    await client.query(
+      `
+      INSERT INTO audit_logs (
+        user_id, school_id, action, resource, resource_id,
+        before_data, after_data, meta, ip, user_agent
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `,
+      [
+        entry.userId || null,
+        entry.schoolId || null,
+        entry.action,
+        entry.resource,
+        entry.resourceId || null,
+        entry.beforeData ? JSON.stringify(entry.beforeData) : null,
+        entry.afterData ? JSON.stringify(entry.afterData) : null,
+        entry.meta ? JSON.stringify(entry.meta) : null,
+        entry.ip || null,
+        entry.userAgent || null,
+      ]
+    );
+  } catch (error) {
+    console.error("Audit log insert error:", error);
+  }
+}
+
+async function getSchoolById(client, schoolId) {
+  const result = await client.query(
+    `
+    SELECT id, name, slug, timezone, active, created_at
+    FROM schools
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [schoolId]
+  );
+  return result.rowCount ? result.rows[0] : null;
+}
+
+async function getScheduleObjectBySchoolId(client, schoolId) {
+  const rows = await client.query(
+    `
+    SELECT period, time::text AS time, name, music, duration
+    FROM schedules
+    WHERE school_id = $1
+    ORDER BY period ASC, time ASC
+    `,
+    [schoolId]
+  );
+  return groupScheduleRows(rows.rows);
+}
+
+async function replaceSchoolSchedule(client, schoolId, scheduleObject) {
+  await client.query("DELETE FROM schedules WHERE school_id = $1", [schoolId]);
+
+  for (const period of PERIODS) {
+    for (const item of scheduleObject[period]) {
+      await client.query(
+        `
+        INSERT INTO schedules (school_id, period, time, name, music, duration)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [schoolId, period, item.time, item.name, item.music, item.duration]
+      );
+    }
+  }
+}
+
+function canAccessSchool(user, schoolId) {
+  if (user.role === ROLE_SUPERADMIN) return true;
+  if (!user.schoolId) return false;
+  return Number(user.schoolId) === Number(schoolId);
+}
+
+function getBearerToken(req) {
+  const value = req.get("authorization") || "";
+  if (!value.toLowerCase().startsWith("bearer ")) return null;
+  return value.slice(7).trim() || null;
+}
+
+async function authenticate(req, res, next) {
+  const token = getBearerToken(req);
+  if (!token) return res.status(401).json({ error: "auth_required" });
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, JWT_SECRET);
+  } catch (_err) {
+    return res.status(401).json({ error: "invalid_token" });
+  }
+
+  const userId = toIntId(decoded?.sub);
+  if (!userId) return res.status(401).json({ error: "invalid_token" });
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT id, name, email, role, school_id, active, created_at, updated_at
+      FROM users
+      WHERE id = $1 AND active = TRUE
+      LIMIT 1
+      `,
+      [userId]
+    );
+
+    if (!result.rowCount) {
+      return res.status(401).json({ error: "user_not_found_or_inactive" });
+    }
+
+    req.user = sanitizeUser(result.rows[0]);
+    next();
+  } catch (error) {
+    console.error("Authentication query error:", error);
+    sendInternalError(res, "auth_query_failed", error);
+  }
+}
+
+function requireRoles(allowedRoles) {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: "insufficient_role" });
+    }
+    next();
+  };
+}
+
+function requireWriteAccess(req, res, next) {
+  if (!req.user || !WRITE_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ error: "read_only_profile" });
+  }
+  next();
+}
+
+function requireSchoolScope(options = {}) {
+  const { paramName, bodyField, queryField } = options;
+
+  return (req, res, next) => {
+    let schoolId = null;
+
+    if (paramName && req.params?.[paramName] !== undefined) {
+      schoolId = toIntId(req.params[paramName]);
+    } else if (bodyField && req.body?.[bodyField] !== undefined) {
+      schoolId = toIntId(req.body[bodyField]);
+    } else if (queryField && req.query?.[queryField] !== undefined) {
+      schoolId = toIntId(req.query[queryField]);
+    }
+
+    if (!schoolId) {
+      return res.status(400).json({ error: "invalid_school_id" });
+    }
+
+    req.targetSchoolId = schoolId;
+    if (canAccessSchool(req.user, schoolId)) return next();
+    return res.status(403).json({ error: "school_access_denied" });
+  };
+}
+
+async function upsertAlert(client, payload) {
+  const result = await client.query(
+    `
+    INSERT INTO alerts (
+      type, severity, school_id, message, details, status, fingerprint
+    )
+    VALUES ($1,$2,$3,$4,$5,'open',$6)
+    ON CONFLICT (fingerprint)
+    DO UPDATE SET
+      type = EXCLUDED.type,
+      severity = EXCLUDED.severity,
+      school_id = EXCLUDED.school_id,
+      message = EXCLUDED.message,
+      details = EXCLUDED.details,
+      status = 'open',
+      resolved_at = NULL,
+      resolved_by = NULL,
+      updated_at = NOW()
+    RETURNING id, type, severity, school_id, message, details, status, fingerprint, created_at, updated_at
+    `,
+    [
+      payload.type,
+      payload.severity,
+      payload.schoolId || null,
+      payload.message,
+      payload.details ? JSON.stringify(payload.details) : null,
+      payload.fingerprint,
+    ]
+  );
+  return result.rows[0];
+}
+
+async function resolveAlertByFingerprint(client, fingerprint, resolvedBy = null) {
+  await client.query(
+    `
+    UPDATE alerts
+    SET status = 'resolved',
+        resolved_at = NOW(),
+        resolved_by = $2,
+        updated_at = NOW()
+    WHERE fingerprint = $1
+      AND status = 'open'
+    `,
+    [fingerprint, resolvedBy]
+  );
+}
+
+async function runMonitoringSweep(trigger = "interval", actorUserId = null) {
+  const client = await pool.connect();
+  try {
+    const schoolsResult = await client.query(
+      `
+      SELECT s.id, s.name, COUNT(sc.id)::int AS schedule_count
+      FROM schools s
+      LEFT JOIN schedules sc ON sc.school_id = s.id
+      WHERE s.active = TRUE
+      GROUP BY s.id, s.name
+      ORDER BY s.id
+      `
+    );
+
+    let schoolsWithoutSchedule = 0;
+
+    for (const school of schoolsResult.rows) {
+      const fingerprint = `school_without_schedule:${school.id}`;
+      if (school.schedule_count === 0) {
+        schoolsWithoutSchedule += 1;
+        await upsertAlert(client, {
+          type: "school_without_schedule",
+          severity: "warning",
+          schoolId: school.id,
+          message: `Escola "${school.name}" sem horarios cadastrados.`,
+          fingerprint,
+          details: {
+            monitorTrigger: trigger,
+            checkedAt: new Date().toISOString(),
+          },
+        });
+      } else {
+        await resolveAlertByFingerprint(client, fingerprint, actorUserId);
+      }
+    }
+
+    return {
+      checkedSchools: schoolsResult.rowCount,
+      schoolsWithoutSchedule,
+      checkedAt: new Date().toISOString(),
+    };
+  } finally {
+    client.release();
+  }
+}
+
+async function ensureEnterpriseSchema() {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schools (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        slug VARCHAR(255) NOT NULL UNIQUE,
+        timezone VARCHAR(100) NOT NULL DEFAULT 'America/Sao_Paulo',
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schedules (
+        id SERIAL PRIMARY KEY,
+        school_id INTEGER NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+        period VARCHAR(30) NOT NULL CHECK (period IN ('morning', 'afternoon', 'afternoonFriday')),
+        time TIME NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        music VARCHAR(255) NOT NULL,
+        duration INTEGER NOT NULL DEFAULT 15,
+        UNIQUE (school_id, period, time)
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role VARCHAR(30) NOT NULL CHECK (role IN ('superadmin','admin_escola','somente_leitura')),
+        school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id BIGSERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+        action VARCHAR(100) NOT NULL,
+        resource VARCHAR(100) NOT NULL,
+        resource_id VARCHAR(100),
+        before_data JSONB,
+        after_data JSONB,
+        meta JSONB,
+        ip VARCHAR(100),
+        user_agent TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schedule_templates (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        source_school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+        payload JSONB NOT NULL,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS alerts (
+        id BIGSERIAL PRIMARY KEY,
+        type VARCHAR(100) NOT NULL,
+        severity VARCHAR(20) NOT NULL CHECK (severity IN ('info','warning','critical')),
+        school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+        message TEXT NOT NULL,
+        details JSONB,
+        status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
+        fingerprint VARCHAR(255) NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        resolved_at TIMESTAMPTZ,
+        resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_schedules_school_id ON schedules(school_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_alerts_status_school ON alerts(status, school_id)
+    `);
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function seedDefaultSuperAdmin() {
+  const existing = await pool.query("SELECT COUNT(*)::int AS total FROM users");
+  const total = existing.rows[0]?.total || 0;
+  if (total > 0) return;
+
+  const passwordHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 12);
+  await pool.query(
+    `
+    INSERT INTO users (name, email, password_hash, role, school_id, active)
+    VALUES ($1, $2, $3, $4, NULL, TRUE)
+    `,
+    [DEFAULT_ADMIN_NAME, DEFAULT_ADMIN_EMAIL.toLowerCase(), passwordHash, ROLE_SUPERADMIN]
+  );
+
+  console.log("Default superadmin created.");
+  console.log(`Email: ${DEFAULT_ADMIN_EMAIL}`);
+  console.log(`Password: ${DEFAULT_ADMIN_PASSWORD}`);
+  console.log("Change credentials after first login.");
+}
+
+app.get("/api/health", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Health check error:", {
+      code: error?.code,
+      message: error?.message,
+    });
+
+    const payload = { ok: false, error: "database_unavailable" };
+    if (process.env.NODE_ENV !== "production") {
+      payload.detail = {
+        code: error?.code || null,
+        message: error?.message || null,
+      };
+    }
+
+    res.status(500).json(payload);
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "email_and_password_required" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT id, name, email, password_hash, role, school_id, active, created_at, updated_at
+      FROM users
+      WHERE email = $1 AND active = TRUE
+      LIMIT 1
+      `,
+      [email]
+    );
+
+    if (!result.rowCount) {
+      return res.status(401).json({ error: "invalid_credentials" });
+    }
+
+    const user = result.rows[0];
+    const matches = await bcrypt.compare(password, user.password_hash);
+    if (!matches) {
+      return res.status(401).json({ error: "invalid_credentials" });
+    }
+
+    const token = jwt.sign(
+      {
+        sub: user.id,
+        role: user.role,
+        schoolId: user.school_id || null,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: user.id,
+      schoolId: user.school_id || null,
+      action: "login",
+      resource: "auth",
+      resourceId: String(user.id),
+      afterData: { email: user.email, role: user.role },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.json({ token, user: sanitizeUser(user) });
+  } catch (error) {
+    console.error("POST /api/auth/login error:", error);
+    sendInternalError(res, "failed_to_login", error);
+  }
+});
+
+app.get("/api/auth/me", authenticate, (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.get("/api/auth/users", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+             s.name AS school_name
+      FROM users u
+      LEFT JOIN schools s ON s.id = u.school_id
+      ORDER BY u.created_at DESC
+      `
+    );
+
+    res.json(
+      result.rows.map((row) => ({
+        ...sanitizeUser(row),
+        schoolName: row.school_name || null,
+      }))
+    );
+  } catch (error) {
+    console.error("GET /api/auth/users error:", error);
+    sendInternalError(res, "failed_to_list_users", error);
+  }
+});
+
+app.post("/api/auth/users", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  const role = String(req.body?.role || "").trim();
+  const schoolId = req.body?.schoolId !== undefined ? toIntId(req.body.schoolId) : null;
+  const active = req.body?.active === false ? false : true;
+
+  if (!name || !email || !password || !ALL_ROLES.includes(role)) {
+    return res.status(400).json({ error: "invalid_user_payload" });
+  }
+
+  if (role !== ROLE_SUPERADMIN && !schoolId) {
+    return res.status(400).json({ error: "school_id_required_for_non_superadmin" });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const result = await pool.query(
+      `
+      INSERT INTO users (name, email, password_hash, role, school_id, active)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      RETURNING id, name, email, role, school_id, active, created_at, updated_at
+      `,
+      [name, email, passwordHash, role, role === ROLE_SUPERADMIN ? null : schoolId, active]
+    );
+
+    const created = sanitizeUser(result.rows[0]);
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: created.schoolId,
+      action: "create_user",
+      resource: "user",
+      resourceId: String(created.id),
+      afterData: created,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.status(201).json(created);
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "duplicate_email" });
+    }
+    console.error("POST /api/auth/users error:", error);
+    sendInternalError(res, "failed_to_create_user", error);
+  }
+});
+
+app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
+  const userId = toIntId(req.params.id);
+  if (!userId) return res.status(400).json({ error: "invalid_user_id" });
+
+  try {
+    const beforeResult = await pool.query(
+      `
+      SELECT id, name, email, role, school_id, active, created_at, updated_at
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [userId]
+    );
+
+    if (!beforeResult.rowCount) {
+      return res.status(404).json({ error: "user_not_found" });
+    }
+
+    const before = beforeResult.rows[0];
+    const updates = [];
+    const values = [];
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "name")) {
+      const name = String(req.body.name || "").trim();
+      if (!name) return res.status(400).json({ error: "name_cannot_be_empty" });
+      values.push(name);
+      updates.push(`name = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "email")) {
+      const email = String(req.body.email || "").trim().toLowerCase();
+      if (!email) return res.status(400).json({ error: "email_cannot_be_empty" });
+      values.push(email);
+      updates.push(`email = $${values.length}`);
+    }
+
+    let roleFromPayload = null;
+    let schoolIdFromPayload = undefined;
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "role")) {
+      const role = String(req.body.role || "").trim();
+      if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: "invalid_role" });
+      roleFromPayload = role;
+      values.push(role);
+      updates.push(`role = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "schoolId")) {
+      const schoolId = req.body.schoolId === null ? null : toIntId(req.body.schoolId);
+      if (req.body.schoolId !== null && !schoolId) {
+        return res.status(400).json({ error: "invalid_school_id" });
+      }
+      schoolIdFromPayload = schoolId;
+      values.push(schoolId);
+      updates.push(`school_id = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "active")) {
+      values.push(Boolean(req.body.active));
+      updates.push(`active = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "password")) {
+      const password = String(req.body.password || "");
+      if (password.length < 6) {
+        return res.status(400).json({ error: "password_too_short" });
+      }
+      const hash = await bcrypt.hash(password, 12);
+      values.push(hash);
+      updates.push(`password_hash = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "no_fields_to_update" });
+    }
+
+    const nextRole = roleFromPayload || before.role;
+    let nextSchoolId =
+      schoolIdFromPayload !== undefined ? schoolIdFromPayload : before.school_id || null;
+
+    if (nextRole === ROLE_SUPERADMIN) {
+      nextSchoolId = null;
+      if (schoolIdFromPayload === undefined) {
+        values.push(null);
+        updates.push(`school_id = $${values.length}`);
+      }
+    } else if (!nextSchoolId) {
+      return res.status(400).json({ error: "school_id_required_for_non_superadmin" });
+    }
+
+    values.push(userId);
+    updates.push(`updated_at = NOW()`);
+
+    const updateResult = await pool.query(
+      `
+      UPDATE users
+      SET ${updates.join(", ")}
+      WHERE id = $${values.length}
+      RETURNING id, name, email, role, school_id, active, created_at, updated_at
+      `,
+      values
+    );
+
+    const after = sanitizeUser(updateResult.rows[0]);
+
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: after.schoolId || null,
+      action: "update_user",
+      resource: "user",
+      resourceId: String(after.id),
+      beforeData: sanitizeUser(before),
+      afterData: after,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.json(after);
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "duplicate_email" });
+    }
+    console.error("PATCH /api/auth/users/:id error:", error);
+    sendInternalError(res, "failed_to_update_user", error);
+  }
+});
+
+app.get("/api/schools", authenticate, async (req, res) => {
+  try {
+    if (req.user.role === ROLE_SUPERADMIN) {
+      const includeInactive = req.query.includeInactive === "true";
+      const whereSql = includeInactive ? "" : "WHERE active = TRUE";
+      const result = await pool.query(
+        `
+        SELECT id, name, slug, timezone, active, created_at
+        FROM schools
+        ${whereSql}
+        ORDER BY name ASC
+        `
+      );
+      return res.json(result.rows.map(mapSchool));
+    }
+
+    if (!req.user.schoolId) {
+      return res.json([]);
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, name, slug, timezone, active, created_at
+      FROM schools
+      WHERE id = $1
+      ORDER BY name ASC
+      `,
+      [req.user.schoolId]
+    );
+    return res.json(result.rows.map(mapSchool));
+  } catch (error) {
+    console.error("GET /api/schools error:", error);
+    sendInternalError(res, "failed_to_list_schools", error);
+  }
+});
+
+app.post("/api/schools", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const timezone = String(req.body?.timezone || "America/Sao_Paulo").trim();
+    const active = req.body?.active === false ? false : true;
+    const slug = slugify(req.body?.slug || name);
+
+    if (!name) {
+      return res.status(400).json({ error: "name_is_required" });
+    }
+    if (!slug) {
+      return res.status(400).json({ error: "slug_is_required" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO schools (name, slug, timezone, active)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, name, slug, timezone, active, created_at
+      `,
+      [name, slug, timezone, active]
+    );
+
+    const created = mapSchool(result.rows[0]);
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: Number(created.id),
+      action: "create_school",
+      resource: "school",
+      resourceId: created.id,
+      afterData: created,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.status(201).json(created);
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "duplicate_school_slug_or_name" });
+    }
+    console.error("POST /api/schools error:", error);
+    sendInternalError(res, "failed_to_create_school", error);
+  }
+});
+
+app.patch("/api/schools/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
+  const schoolId = toIntId(req.params.id);
+  if (!schoolId) return res.status(400).json({ error: "invalid_school_id" });
+
+  try {
+    const before = await getSchoolById(pool, schoolId);
+    if (!before) return res.status(404).json({ error: "school_not_found" });
+
+    const updates = [];
+    const values = [];
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "name")) {
+      const name = String(req.body.name || "").trim();
+      if (!name) return res.status(400).json({ error: "name_cannot_be_empty" });
+      values.push(name);
+      updates.push(`name = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "slug")) {
+      const slug = slugify(req.body.slug);
+      if (!slug) return res.status(400).json({ error: "slug_cannot_be_empty" });
+      values.push(slug);
+      updates.push(`slug = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "timezone")) {
+      const timezone = String(req.body.timezone || "").trim();
+      if (!timezone) return res.status(400).json({ error: "timezone_cannot_be_empty" });
+      values.push(timezone);
+      updates.push(`timezone = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "active")) {
+      values.push(Boolean(req.body.active));
+      updates.push(`active = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "no_fields_to_update" });
+    }
+
+    values.push(schoolId);
+    const result = await pool.query(
+      `
+      UPDATE schools
+      SET ${updates.join(", ")}
+      WHERE id = $${values.length}
+      RETURNING id, name, slug, timezone, active, created_at
+      `,
+      values
+    );
+
+    const after = mapSchool(result.rows[0]);
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId,
+      action: "update_school",
+      resource: "school",
+      resourceId: String(schoolId),
+      beforeData: mapSchool(before),
+      afterData: after,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.json(after);
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "duplicate_school_slug_or_name" });
+    }
+    console.error("PATCH /api/schools/:id error:", error);
+    sendInternalError(res, "failed_to_update_school", error);
+  }
+});
+
+app.delete("/api/schools/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
+  const schoolId = toIntId(req.params.id);
+  if (!schoolId) return res.status(400).json({ error: "invalid_school_id" });
+
+  try {
+    const before = await getSchoolById(pool, schoolId);
+    if (!before) return res.status(404).json({ error: "school_not_found" });
+
+    const result = await pool.query(
+      `
+      UPDATE schools
+      SET active = FALSE
+      WHERE id = $1
+      RETURNING id, name, slug, timezone, active, created_at
+      `,
+      [schoolId]
+    );
+
+    const after = mapSchool(result.rows[0]);
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId,
+      action: "delete_school_soft",
+      resource: "school",
+      resourceId: String(schoolId),
+      beforeData: mapSchool(before),
+      afterData: after,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.json({ success: true, school: after });
+  } catch (error) {
+    console.error("DELETE /api/schools/:id error:", error);
+    sendInternalError(res, "failed_to_delete_school", error);
+  }
+});
+
+app.get(
+  "/api/schools/:id/schedule",
+  authenticate,
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    try {
+      const school = await getSchoolById(pool, req.targetSchoolId);
+      if (!school) return res.status(404).json({ error: "school_not_found" });
+      const schedule = await getScheduleObjectBySchoolId(pool, req.targetSchoolId);
+      res.json(schedule);
+    } catch (error) {
+      console.error("GET /api/schools/:id/schedule error:", error);
+      sendInternalError(res, "failed_to_load_schedule", error);
+    }
+  }
+);
+
+app.put(
+  "/api/schools/:id/schedule",
+  authenticate,
+  requireWriteAccess,
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    let schedule;
+    try {
+      schedule = normalizeSchedulePayload(req.body);
+    } catch (error) {
+      return res.status(400).json({ error: "invalid_schedule_payload", detail: error.message });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const school = await getSchoolById(client, req.targetSchoolId);
+      if (!school) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "school_not_found" });
+      }
+
+      const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
+
+      await client.query("COMMIT");
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.targetSchoolId,
+        action: "update_schedule",
+        resource: "schedule",
+        resourceId: String(req.targetSchoolId),
+        beforeData: beforeSchedule,
+        afterData: schedule,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      res.json(schedule);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("PUT /api/schools/:id/schedule error:", error);
+      sendInternalError(res, "failed_to_save_schedule", error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.get("/api/templates", authenticate, async (req, res) => {
+  try {
+    const requestedSchoolId = req.query.schoolId ? toIntId(req.query.schoolId) : null;
+    const values = [];
+    const where = [];
+
+    if (req.user.role !== ROLE_SUPERADMIN) {
+      if (!req.user.schoolId) return res.json([]);
+      values.push(req.user.schoolId);
+      where.push(`t.source_school_id = $${values.length}`);
+    } else if (requestedSchoolId) {
+      values.push(requestedSchoolId);
+      where.push(`t.source_school_id = $${values.length}`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const result = await pool.query(
+      `
+      SELECT t.id, t.name, t.description, t.source_school_id, t.payload, t.created_by, t.created_at,
+             s.name AS source_school_name, u.name AS creator_name
+      FROM schedule_templates t
+      LEFT JOIN schools s ON s.id = t.source_school_id
+      LEFT JOIN users u ON u.id = t.created_by
+      ${whereSql}
+      ORDER BY t.created_at DESC
+      `,
+      values
+    );
+
+    res.json(
+      result.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        sourceSchoolId: row.source_school_id,
+        sourceSchoolName: row.source_school_name || null,
+        payload: row.payload,
+        createdBy: row.created_by,
+        creatorName: row.creator_name || null,
+        createdAt: row.created_at,
+      }))
+    );
+  } catch (error) {
+    console.error("GET /api/templates error:", error);
+    sendInternalError(res, "failed_to_list_templates", error);
+  }
+});
+
+app.post("/api/templates", authenticate, requireWriteAccess, async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  const description = String(req.body?.description || "").trim() || null;
+  const sourceSchoolId =
+    req.user.role === ROLE_SUPERADMIN
+      ? toIntId(req.body?.sourceSchoolId)
+      : req.user.schoolId;
+
+  if (!name) return res.status(400).json({ error: "name_is_required" });
+  if (!sourceSchoolId) return res.status(400).json({ error: "source_school_id_required" });
+  if (!canAccessSchool(req.user, sourceSchoolId)) {
+    return res.status(403).json({ error: "school_access_denied" });
+  }
+
+  const client = await pool.connect();
+  try {
+    const school = await getSchoolById(client, sourceSchoolId);
+    if (!school) return res.status(404).json({ error: "school_not_found" });
+
+    const payload = await getScheduleObjectBySchoolId(client, sourceSchoolId);
+    const result = await client.query(
+      `
+      INSERT INTO schedule_templates (name, description, source_school_id, payload, created_by)
+      VALUES ($1,$2,$3,$4,$5)
+      RETURNING id, name, description, source_school_id, payload, created_by, created_at
+      `,
+      [name, description, sourceSchoolId, JSON.stringify(payload), req.user.id]
+    );
+
+    const template = result.rows[0];
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: sourceSchoolId,
+      action: "create_template",
+      resource: "schedule_template",
+      resourceId: String(template.id),
+      afterData: {
+        name: template.name,
+        sourceSchoolId,
+      },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.status(201).json({
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      sourceSchoolId: template.source_school_id,
+      payload: template.payload,
+      createdBy: template.created_by,
+      createdAt: template.created_at,
+    });
+  } catch (error) {
+    console.error("POST /api/templates error:", error);
+    sendInternalError(res, "failed_to_create_template", error);
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/api/templates/:id/clone-to-school", authenticate, requireWriteAccess, async (req, res) => {
+  const templateId = toIntId(req.params.id);
+  const requestedTargetSchoolId = toIntId(req.body?.targetSchoolId);
+  const targetSchoolId =
+    req.user.role === ROLE_SUPERADMIN ? requestedTargetSchoolId : req.user.schoolId;
+
+  if (!templateId || !targetSchoolId) {
+    return res.status(400).json({ error: "invalid_template_or_school_id" });
+  }
+
+  if (!canAccessSchool(req.user, targetSchoolId)) {
+    return res.status(403).json({ error: "school_access_denied" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const templateResult = await client.query(
+      `
+      SELECT id, name, description, source_school_id, payload
+      FROM schedule_templates
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [templateId]
+    );
+    if (!templateResult.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "template_not_found" });
+    }
+
+    const template = templateResult.rows[0];
+    if (
+      req.user.role !== ROLE_SUPERADMIN &&
+      Number(template.source_school_id) !== Number(req.user.schoolId)
+    ) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "template_access_denied" });
+    }
+
+    const targetSchool = await getSchoolById(client, targetSchoolId);
+    if (!targetSchool) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "target_school_not_found" });
+    }
+
+    const payload = normalizeSchedulePayload(template.payload);
+    const beforeSchedule = await getScheduleObjectBySchoolId(client, targetSchoolId);
+    await replaceSchoolSchedule(client, targetSchoolId, payload);
+    await client.query("COMMIT");
+
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: targetSchoolId,
+      action: "clone_template_to_school",
+      resource: "schedule_template",
+      resourceId: String(template.id),
+      beforeData: beforeSchedule,
+      afterData: payload,
+      meta: {
+        templateName: template.name,
+        sourceSchoolId: template.source_school_id,
+        targetSchoolId,
+      },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.json({
+      success: true,
+      templateId: template.id,
+      targetSchoolId,
+      schedule: payload,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/templates/:id/clone-to-school error:", error);
+    sendInternalError(res, "failed_to_clone_template", error);
+  } finally {
+    client.release();
+  }
+});
+
+app.get(
+  "/api/schools/:id/backup",
+  authenticate,
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    try {
+      const school = await getSchoolById(pool, req.targetSchoolId);
+      if (!school) return res.status(404).json({ error: "school_not_found" });
+      const schedule = await getScheduleObjectBySchoolId(pool, req.targetSchoolId);
+
+      const backup = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        school: mapSchool(school),
+        schedule,
+      };
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.targetSchoolId,
+        action: "export_backup",
+        resource: "backup",
+        resourceId: String(req.targetSchoolId),
+        afterData: { exportedAt: backup.exportedAt },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      res.json(backup);
+    } catch (error) {
+      console.error("GET /api/schools/:id/backup error:", error);
+      sendInternalError(res, "failed_to_export_backup", error);
+    }
+  }
+);
+
+app.post(
+  "/api/schools/:id/restore",
+  authenticate,
+  requireWriteAccess,
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    let schedule;
+    try {
+      schedule = normalizeSchedulePayload(req.body);
+    } catch (error) {
+      return res.status(400).json({ error: "invalid_backup_payload", detail: error.message });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const school = await getSchoolById(client, req.targetSchoolId);
+      if (!school) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "school_not_found" });
+      }
+
+      const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
+      await client.query("COMMIT");
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.targetSchoolId,
+        action: "restore_backup",
+        resource: "backup",
+        resourceId: String(req.targetSchoolId),
+        beforeData: beforeSchedule,
+        afterData: schedule,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      res.json({ success: true, schedule });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("POST /api/schools/:id/restore error:", error);
+      sendInternalError(res, "failed_to_restore_backup", error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.get("/api/audit-logs", authenticate, async (req, res) => {
+  const limitRaw = Number.parseInt(String(req.query.limit || "100"), 10);
+  const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 100;
+  const schoolIdFilter = req.query.schoolId ? toIntId(req.query.schoolId) : null;
+
+  try {
+    const values = [];
+    const where = [];
+
+    if (req.user.role !== ROLE_SUPERADMIN) {
+      if (!req.user.schoolId) return res.json([]);
+      values.push(req.user.schoolId);
+      where.push(`al.school_id = $${values.length}`);
+    } else if (schoolIdFilter) {
+      values.push(schoolIdFilter);
+      where.push(`al.school_id = $${values.length}`);
+    }
+
+    if (req.query.action) {
+      values.push(String(req.query.action));
+      where.push(`al.action = $${values.length}`);
+    }
+
+    values.push(limit);
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const result = await pool.query(
+      `
+      SELECT al.id, al.user_id, al.school_id, al.action, al.resource, al.resource_id,
+             al.before_data, al.after_data, al.meta, al.ip, al.user_agent, al.created_at,
+             u.name AS user_name, s.name AS school_name
+      FROM audit_logs al
+      LEFT JOIN users u ON u.id = al.user_id
+      LEFT JOIN schools s ON s.id = al.school_id
+      ${whereSql}
+      ORDER BY al.created_at DESC
+      LIMIT $${values.length}
+      `,
+      values
+    );
+
+    res.json(
+      result.rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        userName: row.user_name || null,
+        schoolId: row.school_id,
+        schoolName: row.school_name || null,
+        action: row.action,
+        resource: row.resource,
+        resourceId: row.resource_id,
+        beforeData: row.before_data,
+        afterData: row.after_data,
+        meta: row.meta,
+        ip: row.ip,
+        userAgent: row.user_agent,
+        createdAt: row.created_at,
+      }))
+    );
+  } catch (error) {
+    console.error("GET /api/audit-logs error:", error);
+    sendInternalError(res, "failed_to_list_audit_logs", error);
+  }
+});
+
+app.get("/api/alerts", authenticate, async (req, res) => {
+  try {
+    const status = req.query.status ? String(req.query.status) : null;
+    const schoolIdFilter = req.query.schoolId ? toIntId(req.query.schoolId) : null;
+    const values = [];
+    const where = [];
+
+    if (status && ["open", "resolved"].includes(status)) {
+      values.push(status);
+      where.push(`a.status = $${values.length}`);
+    }
+
+    if (req.user.role !== ROLE_SUPERADMIN) {
+      if (!req.user.schoolId) return res.json([]);
+      values.push(req.user.schoolId);
+      where.push(`(a.school_id = $${values.length} OR a.school_id IS NULL)`);
+    } else if (schoolIdFilter) {
+      values.push(schoolIdFilter);
+      where.push(`a.school_id = $${values.length}`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const result = await pool.query(
+      `
+      SELECT a.id, a.type, a.severity, a.school_id, a.message, a.details, a.status, a.fingerprint,
+             a.created_at, a.updated_at, a.resolved_at, a.resolved_by,
+             s.name AS school_name, u.name AS resolved_by_name
+      FROM alerts a
+      LEFT JOIN schools s ON s.id = a.school_id
+      LEFT JOIN users u ON u.id = a.resolved_by
+      ${whereSql}
+      ORDER BY a.created_at DESC
+      LIMIT 500
+      `,
+      values
+    );
+
+    res.json(
+      result.rows.map((row) => ({
+        id: row.id,
+        type: row.type,
+        severity: row.severity,
+        schoolId: row.school_id,
+        schoolName: row.school_name || null,
+        message: row.message,
+        details: row.details,
+        status: row.status,
+        fingerprint: row.fingerprint,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        resolvedAt: row.resolved_at,
+        resolvedBy: row.resolved_by,
+        resolvedByName: row.resolved_by_name || null,
+      }))
+    );
+  } catch (error) {
+    console.error("GET /api/alerts error:", error);
+    sendInternalError(res, "failed_to_list_alerts", error);
+  }
+});
+
+app.patch("/api/alerts/:id/resolve", authenticate, requireWriteAccess, async (req, res) => {
+  const alertId = toIntId(req.params.id);
+  if (!alertId) return res.status(400).json({ error: "invalid_alert_id" });
+
+  try {
+    let result;
+    if (req.user.role === ROLE_SUPERADMIN) {
+      result = await pool.query(
+        `
+        UPDATE alerts
+        SET status = 'resolved',
+            resolved_at = NOW(),
+            resolved_by = $2,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, school_id, type, status
+        `,
+        [alertId, req.user.id]
+      );
+    } else {
+      result = await pool.query(
+        `
+        UPDATE alerts
+        SET status = 'resolved',
+            resolved_at = NOW(),
+            resolved_by = $2,
+            updated_at = NOW()
+        WHERE id = $1
+          AND school_id = $3
+        RETURNING id, school_id, type, status
+        `,
+        [alertId, req.user.id, req.user.schoolId]
+      );
+    }
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: "alert_not_found_or_no_access" });
+    }
+
+    const row = result.rows[0];
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: row.school_id || null,
+      action: "resolve_alert",
+      resource: "alert",
+      resourceId: String(row.id),
+      afterData: row,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    res.json({ success: true, alert: row });
+  } catch (error) {
+    console.error("PATCH /api/alerts/:id/resolve error:", error);
+    sendInternalError(res, "failed_to_resolve_alert", error);
+  }
+});
+
+app.post("/api/monitor/playback-error", authenticate, async (req, res) => {
+  const explicitSchoolId = req.body?.schoolId ? toIntId(req.body.schoolId) : null;
+  const schoolId = explicitSchoolId || req.user.schoolId;
+  const message = String(req.body?.message || "").trim();
+  const context = req.body?.context && typeof req.body.context === "object" ? req.body.context : {};
+
+  if (!schoolId) return res.status(400).json({ error: "school_id_required" });
+  if (!message) return res.status(400).json({ error: "message_required" });
+  if (!canAccessSchool(req.user, schoolId)) {
+    return res.status(403).json({ error: "school_access_denied" });
+  }
+
+  const fingerprint = `playback_error:${schoolId}:${slugify(message).slice(0, 120)}`;
+  const client = await pool.connect();
+  try {
+    const alert = await upsertAlert(client, {
+      type: "playback_error",
+      severity: "warning",
+      schoolId,
+      message,
+      fingerprint,
+      details: {
+        ...context,
+        reportedAt: new Date().toISOString(),
+      },
+    });
+
+    const meta = getRequestMeta(req);
+    await writeAuditLog(
+      {
+        userId: req.user.id,
+        schoolId,
+        action: "report_playback_error",
+        resource: "alert",
+        resourceId: String(alert.id),
+        afterData: { message, context },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      },
+      client
+    );
+
+    res.status(201).json({ success: true, alert });
+  } catch (error) {
+    console.error("POST /api/monitor/playback-error error:", error);
+    sendInternalError(res, "failed_to_report_playback_error", error);
+  } finally {
+    client.release();
+  }
+});
+
+app.get("/api/monitor/status", authenticate, requireRoles([ROLE_SUPERADMIN]), async (_req, res) => {
+  try {
+    const sweep = await runMonitoringSweep("manual");
+
+    const openAlerts = await pool.query(
+      `
+      SELECT severity, COUNT(*)::int AS total
+      FROM alerts
+      WHERE status = 'open'
+      GROUP BY severity
+      `
+    );
+
+    const schools = await pool.query("SELECT COUNT(*)::int AS total FROM schools WHERE active = TRUE");
+    const users = await pool.query("SELECT COUNT(*)::int AS total FROM users WHERE active = TRUE");
+
+    res.json({
+      apiOnline: true,
+      checkedAt: sweep.checkedAt,
+      checkedSchools: sweep.checkedSchools,
+      schoolsWithoutSchedule: sweep.schoolsWithoutSchedule,
+      activeSchools: schools.rows[0]?.total || 0,
+      activeUsers: users.rows[0]?.total || 0,
+      openAlertsBySeverity: openAlerts.rows.reduce((acc, row) => {
+        acc[row.severity] = row.total;
+        return acc;
+      }, {}),
+    });
+  } catch (error) {
+    console.error("GET /api/monitor/status error:", error);
+    sendInternalError(res, "failed_to_get_monitor_status", error);
+  }
+});
+
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "api_route_not_found" });
+});
+
+app.use(express.static(path.resolve(__dirname)));
+
+app.get("/", (_req, res) => {
+  res.sendFile(path.resolve(__dirname, "index.html"));
+});
+
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
+});
+
+async function startServer() {
+  await ensureEnterpriseSchema();
+  await seedDefaultSuperAdmin();
+  await runMonitoringSweep("startup");
+
+  setInterval(() => {
+    runMonitoringSweep("interval").catch((error) => {
+      console.error("Monitoring sweep error:", error);
+    });
+  }, MONITOR_INTERVAL_MS).unref();
+
+  app.listen(PORT, () => {
+    console.log(`SinalTech API running on port ${PORT}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Failed to start server:", error);
+  process.exit(1);
+});
