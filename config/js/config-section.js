@@ -21,9 +21,11 @@
   const navDashboard = document.getElementById("navDashboard");
   const navConfig = document.getElementById("navConfig");
   const navSchools = document.getElementById("navSchools");
+  const navUsers = document.getElementById("navUsers");
   const dashboardSection = document.getElementById("dashboardSection");
   const configSection = document.getElementById("configSection");
   const schoolsSection = document.getElementById("schoolsSection");
+  const usersSection = document.getElementById("usersSection");
   const pageEyebrow = document.getElementById("pageEyebrow");
   const pageTitle = document.getElementById("pageTitle");
   const sidebar = document.getElementById("sidebar");
@@ -69,6 +71,21 @@
   const schoolTimezoneInput = document.getElementById("schoolTimezoneInput");
   const schoolActiveInput = document.getElementById("schoolActiveInput");
 
+  const usersTableBody = document.getElementById("usersTableBody");
+  const userBtn = document.getElementById("userBtn");
+  const userModal = document.getElementById("userModal");
+  const userModalContent = document.getElementById("userModalContent");
+  const userModalTitle = document.getElementById("userModalTitle");
+  const userForm = document.getElementById("userForm");
+  const cancelUserBtn = document.getElementById("cancelUserBtn");
+  const userEditId = document.getElementById("userEditId");
+  const userNameInput = document.getElementById("userNameInput");
+  const userEmailInput = document.getElementById("userEmailInput");
+  const userPasswordInput = document.getElementById("userPasswordInput");
+  const userRoleInput = document.getElementById("userRoleInput");
+  const userSchoolSelect = document.getElementById("userSchoolSelect");
+  const userActiveInput = document.getElementById("userActiveInput");
+
   const authOverlay = document.getElementById("authOverlay");
   const loginForm = document.getElementById("loginForm");
   const loginEmail = document.getElementById("loginEmail");
@@ -98,6 +115,7 @@
   let configLoaded = false;
   let schools = [];
   let templates = [];
+  let users = [];
   let currentUser = null;
 
   function formatRoleLabel(role) {
@@ -113,8 +131,16 @@
     return currentUser?.role === ROLE_SUPERADMIN;
   }
 
+  function isSchoolAdmin() {
+    return currentUser?.role === ROLE_ADMIN_ESCOLA;
+  }
+
   function canWrite() {
     return currentUser && currentUser.role !== ROLE_SOMENTE_LEITURA;
+  }
+
+  function canManageUsers() {
+    return Boolean(currentUser) && (isSuperAdmin() || isSchoolAdmin());
   }
 
   function getAuthToken() {
@@ -300,17 +326,23 @@
   }
 
   function switchSection(target) {
+    if (target === "schools" && !isSuperAdmin()) target = "dashboard";
+    if (target === "users" && !canManageUsers()) target = "dashboard";
+
     const showDashboard = target === "dashboard";
     const showConfig = target === "config";
     const showSchools = target === "schools" && isSuperAdmin();
+    const showUsers = target === "users" && canManageUsers();
 
     dashboardSection?.classList.toggle("hidden", !showDashboard);
     configSection?.classList.toggle("hidden", !showConfig);
     schoolsSection?.classList.toggle("hidden", !showSchools);
+    usersSection?.classList.toggle("hidden", !showUsers);
 
     setNavState(navDashboard, showDashboard);
     setNavState(navConfig, showConfig);
     setNavState(navSchools, showSchools);
+    setNavState(navUsers, showUsers);
 
     if (showDashboard) setPageTitle("Sinais");
     if (showConfig) {
@@ -321,6 +353,10 @@
       setPageTitle("Escolas");
       renderSchoolsTable();
     }
+    if (showUsers) {
+      setPageTitle("Usuarios");
+      renderUsersTable();
+    }
 
     closeSidebarOnMobile();
   }
@@ -329,11 +365,19 @@
     if (navSchools) {
       navSchools.classList.toggle("hidden", !isSuperAdmin());
     }
+    if (navUsers) {
+      navUsers.classList.toggle("hidden", !canManageUsers());
+    }
 
     if (schoolBtn) {
       schoolBtn.disabled = !isSuperAdmin();
       schoolBtn.classList.toggle("opacity-50", !isSuperAdmin());
       schoolBtn.classList.toggle("cursor-not-allowed", !isSuperAdmin());
+    }
+    if (userBtn) {
+      userBtn.disabled = !canManageUsers();
+      userBtn.classList.toggle("opacity-50", !canManageUsers());
+      userBtn.classList.toggle("cursor-not-allowed", !canManageUsers());
     }
 
     const disableWrite = !canWrite();
@@ -475,12 +519,15 @@
 
     const activeSchools = getActiveSchools();
     const previous = String(selectedSchoolId || "");
+    const allowPlaceholder = isSuperAdmin();
 
     select.innerHTML = "";
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = "Selecione a escola";
-    select.appendChild(placeholder);
+    if (allowPlaceholder) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Selecione a escola";
+      select.appendChild(placeholder);
+    }
 
     activeSchools.forEach((school) => {
       const option = document.createElement("option");
@@ -490,14 +537,16 @@
       select.appendChild(option);
     });
 
-    select.disabled = activeSchools.length === 0;
+    select.disabled = activeSchools.length === 0 || !isSuperAdmin();
   }
 
   async function syncSchoolSelectors() {
     const activeSchools = getActiveSchools();
-    const current = getCurrentSchoolId();
-    const hasCurrent = activeSchools.some((school) => String(school.id) === String(current));
-    const next = hasCurrent ? current : activeSchools[0]?.id || "";
+    const current = String(getCurrentSchoolId() || "");
+    const lockedSchoolId = !isSuperAdmin() ? String(currentUser?.schoolId || "") : "";
+    const hasCurrent = activeSchools.some((school) => String(school.id) === current);
+    const hasLocked = activeSchools.some((school) => String(school.id) === lockedSchoolId);
+    const next = lockedSchoolId ? (hasLocked ? lockedSchoolId : "") : hasCurrent ? current : activeSchools[0]?.id || "";
 
     buildSchoolOptions(dashboardSchoolSelect, next);
     buildSchoolOptions(configSchoolSelect, next);
@@ -694,6 +743,328 @@
     } catch (err) {
       console.error("Erro ao excluir escola:", err);
       alert("Erro ao excluir escola.");
+    }
+  }
+
+  function openUserModal() {
+    if (!userModal || !userModalContent) return;
+    userModal.classList.remove("hidden");
+    userModal.classList.add("flex");
+
+    setTimeout(() => {
+      userModalContent.classList.remove("scale-95", "opacity-0");
+    }, 30);
+  }
+
+  function closeUserModal() {
+    if (!userModal || !userModalContent) return;
+    userModalContent.classList.add("scale-95", "opacity-0");
+    setTimeout(() => {
+      userModal.classList.add("hidden");
+      userModal.classList.remove("flex");
+    }, 200);
+  }
+
+  function buildUserRoleOptions(selectedRole = ROLE_ADMIN_ESCOLA) {
+    if (!userRoleInput) return;
+
+    const roleOptions = isSuperAdmin()
+      ? [
+          { value: ROLE_ADMIN_ESCOLA, label: "Admin Escola" },
+          { value: ROLE_SOMENTE_LEITURA, label: "Somente Leitura" },
+          { value: ROLE_SUPERADMIN, label: "Superadmin" },
+        ]
+      : [
+          { value: ROLE_ADMIN_ESCOLA, label: "Admin Escola" },
+          { value: ROLE_SOMENTE_LEITURA, label: "Somente Leitura" },
+        ];
+
+    userRoleInput.innerHTML = "";
+    roleOptions.forEach((roleOption) => {
+      const option = document.createElement("option");
+      option.value = roleOption.value;
+      option.textContent = roleOption.label;
+      userRoleInput.appendChild(option);
+    });
+
+    const allowedValues = roleOptions.map((roleOption) => roleOption.value);
+    userRoleInput.value = allowedValues.includes(selectedRole) ? selectedRole : allowedValues[0];
+  }
+
+  function getManagedSchools() {
+    const activeSchools = getActiveSchools();
+    if (isSuperAdmin()) return activeSchools;
+    if (!currentUser?.schoolId) return [];
+    return activeSchools.filter(
+      (school) => String(school.id) === String(currentUser.schoolId)
+    );
+  }
+
+  function syncUserSchoolField(selectedSchoolId = "") {
+    if (!userSchoolSelect || !userRoleInput) return;
+
+    const role = userRoleInput.value;
+    const managedSchools = getManagedSchools();
+    userSchoolSelect.innerHTML = "";
+
+    if (role === ROLE_SUPERADMIN) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "Nao se aplica (superadmin)";
+      userSchoolSelect.appendChild(option);
+      userSchoolSelect.value = "";
+      userSchoolSelect.disabled = true;
+      return;
+    }
+
+    if (isSuperAdmin()) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Selecione a escola";
+      userSchoolSelect.appendChild(placeholder);
+    }
+
+    managedSchools.forEach((school) => {
+      const option = document.createElement("option");
+      option.value = String(school.id);
+      option.textContent = school.name || "Sem nome";
+      userSchoolSelect.appendChild(option);
+    });
+
+    const preferred = String(selectedSchoolId || "");
+    const exists = managedSchools.some((school) => String(school.id) === preferred);
+    if (exists) {
+      userSchoolSelect.value = preferred;
+    } else if (isSuperAdmin()) {
+      userSchoolSelect.value = "";
+    } else {
+      userSchoolSelect.value = String(currentUser?.schoolId || "");
+    }
+
+    userSchoolSelect.disabled = isSuperAdmin() ? managedSchools.length === 0 : true;
+  }
+
+  function openNewUserModal() {
+    if (!canManageUsers()) {
+      alert("Seu perfil nao pode gerenciar usuarios.");
+      return;
+    }
+    if (!userForm) return;
+
+    userForm.reset();
+    if (userEditId) userEditId.value = "";
+    if (userModalTitle) userModalTitle.textContent = "Novo Usuario";
+    if (userPasswordInput) userPasswordInput.required = true;
+    if (userActiveInput) userActiveInput.checked = true;
+    buildUserRoleOptions(ROLE_ADMIN_ESCOLA);
+    syncUserSchoolField(String(currentUser?.schoolId || ""));
+    openUserModal();
+  }
+
+  function openEditUserModal(user) {
+    if (!canManageUsers()) return;
+    if (!userForm) return;
+
+    if (userEditId) userEditId.value = String(user.id);
+    if (userNameInput) userNameInput.value = user.name || "";
+    if (userEmailInput) userEmailInput.value = user.email || "";
+    if (userPasswordInput) {
+      userPasswordInput.value = "";
+      userPasswordInput.required = false;
+    }
+    if (userActiveInput) userActiveInput.checked = user.active !== false;
+    if (userModalTitle) userModalTitle.textContent = "Editar Usuario";
+
+    buildUserRoleOptions(user.role || ROLE_ADMIN_ESCOLA);
+    syncUserSchoolField(String(user.schoolId || ""));
+    openUserModal();
+  }
+
+  function getSchoolNameById(schoolId) {
+    const found = schools.find((school) => String(school.id) === String(schoolId));
+    return found?.name || "-";
+  }
+
+  function renderUsersTable() {
+    if (!usersTableBody) return;
+
+    if (!canManageUsers()) {
+      usersTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="py-6 text-center text-slate-400">
+            Sem permissao para gerenciar usuarios
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    if (!users.length) {
+      usersTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="py-6 text-center text-slate-400">
+            Nenhum usuario encontrado
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    usersTableBody.innerHTML = "";
+
+    users.forEach((user) => {
+      const tr = document.createElement("tr");
+      const schoolName =
+        user.schoolName || (user.schoolId ? getSchoolNameById(user.schoolId) : "Todas");
+
+      tr.innerHTML = `
+        <td class="px-4 py-3 font-medium">${user.name || "-"}</td>
+        <td class="px-4 py-3">${user.email || "-"}</td>
+        <td class="px-4 py-3">${formatRoleLabel(user.role)}</td>
+        <td class="px-4 py-3">${schoolName}</td>
+        <td class="px-4 py-3">
+          <span class="rounded-full px-2 py-1 text-xs font-semibold ${
+            user.active !== false
+              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+              : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+          }">
+            ${user.active !== false ? "Ativo" : "Inativo"}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-center">
+          <button type="button" data-action="edit" class="text-blue-600 transition hover:text-blue-800" title="Editar">
+            <i class="fas fa-pen"></i>
+          </button>
+        </td>
+      `;
+
+      tr.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+        openEditUserModal(user);
+      });
+
+      usersTableBody.appendChild(tr);
+    });
+  }
+
+  async function loadUsers() {
+    if (!usersTableBody) return;
+    if (!canManageUsers()) {
+      users = [];
+      renderUsersTable();
+      return;
+    }
+
+    usersTableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="py-6 text-center text-slate-500">
+          Carregando usuarios...
+        </td>
+      </tr>
+    `;
+
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/users`);
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "fetch-users-error");
+        throw new Error(reason);
+      }
+
+      const data = await res.json();
+      users = Array.isArray(data) ? data : [];
+      users.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+      renderUsersTable();
+    } catch (err) {
+      console.error("Erro ao carregar usuarios:", err);
+      users = [];
+      usersTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="py-6 text-center text-red-600">
+            Erro ao carregar usuarios
+          </td>
+        </tr>
+      `;
+    }
+  }
+
+  async function saveUser(event) {
+    event.preventDefault();
+    if (!canManageUsers()) {
+      alert("Seu perfil nao pode gerenciar usuarios.");
+      return;
+    }
+    if (
+      !userNameInput ||
+      !userEmailInput ||
+      !userPasswordInput ||
+      !userRoleInput ||
+      !userSchoolSelect ||
+      !userActiveInput
+    ) {
+      return;
+    }
+
+    const editId = userEditId?.value || "";
+    const name = userNameInput.value.trim();
+    const email = userEmailInput.value.trim().toLowerCase();
+    const password = userPasswordInput.value;
+    const role = userRoleInput.value;
+
+    if (!name || !email) {
+      alert("Informe nome e email.");
+      return;
+    }
+
+    if (!editId && password.length < 6) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    const payload = {
+      name,
+      email,
+      role,
+      active: userActiveInput.checked,
+    };
+
+    if (role !== ROLE_SUPERADMIN) {
+      const schoolId = isSuperAdmin()
+        ? Number.parseInt(String(userSchoolSelect.value || ""), 10)
+        : Number.parseInt(String(currentUser?.schoolId || ""), 10);
+
+      if (!schoolId) {
+        alert("Selecione a escola do usuario.");
+        return;
+      }
+      payload.schoolId = schoolId;
+    } else {
+      payload.schoolId = null;
+    }
+
+    if (password.trim()) {
+      payload.password = password;
+    }
+
+    const url = editId ? `${API_BASE}/auth/users/${editId}` : `${API_BASE}/auth/users`;
+    const method = editId ? "PATCH" : "POST";
+
+    try {
+      const res = await apiFetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "save-user-error");
+        throw new Error(reason);
+      }
+
+      closeUserModal();
+      await loadUsers();
+      alert("Usuario salvo com sucesso.");
+    } catch (err) {
+      console.error("Erro ao salvar usuario:", err);
+      alert("Erro ao salvar usuario.");
     }
   }
 
@@ -1094,6 +1465,7 @@
       setCurrentUser(data.user);
       hideAuthOverlay();
       await loadSchools();
+      await loadUsers();
       switchSection("dashboard");
       broadcastAuthChanged(true);
       if (loginForm) loginForm.reset();
@@ -1145,7 +1517,9 @@
     setCurrentUser(null);
     schools = [];
     templates = [];
+    users = [];
     renderSchoolsTable();
+    renderUsersTable();
     if (scheduleTable) {
       scheduleTable.innerHTML = `
         <tr>
@@ -1180,6 +1554,11 @@
       switchSection("schools");
     });
 
+    navUsers?.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchSection("users");
+    });
+
     dashboardSchoolSelect?.addEventListener("change", (event) => {
       setCurrentSchoolId(event.target.value);
     });
@@ -1197,6 +1576,13 @@
     cancelSchoolBtn?.addEventListener("click", closeSchoolModal);
     schoolForm?.addEventListener("submit", saveSchool);
 
+    userBtn?.addEventListener("click", openNewUserModal);
+    cancelUserBtn?.addEventListener("click", closeUserModal);
+    userRoleInput?.addEventListener("change", () => {
+      syncUserSchoolField(userSchoolSelect?.value || "");
+    });
+    userForm?.addEventListener("submit", saveUser);
+
     saveTemplateBtn?.addEventListener("click", saveTemplateFromCurrentSchool);
     cloneTemplateBtn?.addEventListener("click", applySelectedTemplate);
     exportBackupBtn?.addEventListener("click", exportCurrentBackup);
@@ -1212,6 +1598,10 @@
     schoolModal?.addEventListener("click", (event) => {
       if (event.target === schoolModal) closeSchoolModal();
     });
+
+    userModal?.addEventListener("click", (event) => {
+      if (event.target === userModal) closeUserModal();
+    });
   }
 
   async function init() {
@@ -1222,6 +1612,7 @@
     const authenticated = await restoreSession();
     if (authenticated) {
       await loadSchools();
+      await loadUsers();
       switchSection("dashboard");
     } else {
       switchSection("dashboard");

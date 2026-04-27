@@ -150,6 +150,7 @@ function sanitizeUser(row) {
     email: row.email,
     role: row.role,
     schoolId: row.school_id || null,
+    schoolName: row.school_name || null,
     active: row.active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -332,6 +333,10 @@ function canAccessSchool(user, schoolId) {
   return Number(user.schoolId) === Number(schoolId);
 }
 
+function isSchoolBoundRole(role) {
+  return role === ROLE_ADMIN_ESCOLA || role === ROLE_SOMENTE_LEITURA;
+}
+
 function getBearerToken(req) {
   const value = req.get("authorization") || "";
   if (!value.toLowerCase().startsWith("bearer ")) return null;
@@ -355,9 +360,11 @@ async function authenticate(req, res, next) {
   try {
     const result = await pool.query(
       `
-      SELECT id, name, email, role, school_id, active, created_at, updated_at
-      FROM users
-      WHERE id = $1 AND active = TRUE
+      SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+             s.name AS school_name, s.active AS school_active
+      FROM users u
+      LEFT JOIN schools s ON s.id = u.school_id
+      WHERE u.id = $1 AND u.active = TRUE
       LIMIT 1
       `,
       [userId]
@@ -367,7 +374,17 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ error: "user_not_found_or_inactive" });
     }
 
-    req.user = sanitizeUser(result.rows[0]);
+    const userRow = result.rows[0];
+    if (isSchoolBoundRole(userRow.role)) {
+      if (!userRow.school_id) {
+        return res.status(403).json({ error: "user_school_not_configured" });
+      }
+      if (userRow.school_active !== true) {
+        return res.status(403).json({ error: "school_inactive_or_not_found" });
+      }
+    }
+
+    req.user = sanitizeUser(userRow);
     next();
   } catch (error) {
     console.error("Authentication query error:", error);
@@ -672,9 +689,11 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT id, name, email, password_hash, role, school_id, active, created_at, updated_at
-      FROM users
-      WHERE email = $1 AND active = TRUE
+      SELECT u.id, u.name, u.email, u.password_hash, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+             s.name AS school_name, s.active AS school_active
+      FROM users u
+      LEFT JOIN schools s ON s.id = u.school_id
+      WHERE u.email = $1 AND u.active = TRUE
       LIMIT 1
       `,
       [email]
@@ -688,6 +707,15 @@ app.post("/api/auth/login", async (req, res) => {
     const matches = await bcrypt.compare(password, user.password_hash);
     if (!matches) {
       return res.status(401).json({ error: "invalid_credentials" });
+    }
+
+    if (isSchoolBoundRole(user.role)) {
+      if (!user.school_id) {
+        return res.status(403).json({ error: "user_school_not_configured" });
+      }
+      if (user.school_active !== true) {
+        return res.status(403).json({ error: "school_inactive_or_not_found" });
+      }
     }
 
     const token = jwt.sign(
@@ -723,91 +751,144 @@ app.get("/api/auth/me", authenticate, (req, res) => {
   res.json({ user: req.user });
 });
 
-app.get("/api/auth/users", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
-             s.name AS school_name
-      FROM users u
-      LEFT JOIN schools s ON s.id = u.school_id
-      ORDER BY u.created_at DESC
-      `
-    );
+app.get(
+  "/api/auth/users",
+  authenticate,
+  requireRoles([ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA]),
+  async (req, res) => {
+    try {
+      const values = [];
+      const where = [];
 
-    res.json(
-      result.rows.map((row) => ({
-        ...sanitizeUser(row),
-        schoolName: row.school_name || null,
-      }))
-    );
-  } catch (error) {
-    console.error("GET /api/auth/users error:", error);
-    sendInternalError(res, "failed_to_list_users", error);
-  }
-});
+      if (req.user.role !== ROLE_SUPERADMIN) {
+        values.push(req.user.schoolId);
+        where.push(`u.school_id = $${values.length}`);
+      }
 
-app.post("/api/auth/users", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
-  const name = String(req.body?.name || "").trim();
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const password = String(req.body?.password || "");
-  const role = String(req.body?.role || "").trim();
-  const schoolId = req.body?.schoolId !== undefined ? toIntId(req.body.schoolId) : null;
-  const active = req.body?.active === false ? false : true;
+      const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      const result = await pool.query(
+        `
+        SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+               s.name AS school_name
+        FROM users u
+        LEFT JOIN schools s ON s.id = u.school_id
+        ${whereSql}
+        ORDER BY u.created_at DESC
+        `,
+        values
+      );
 
-  if (!name || !email || !password || !ALL_ROLES.includes(role)) {
-    return res.status(400).json({ error: "invalid_user_payload" });
-  }
-
-  if (role !== ROLE_SUPERADMIN && !schoolId) {
-    return res.status(400).json({ error: "school_id_required_for_non_superadmin" });
-  }
-
-  try {
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    const result = await pool.query(
-      `
-      INSERT INTO users (name, email, password_hash, role, school_id, active)
-      VALUES ($1,$2,$3,$4,$5,$6)
-      RETURNING id, name, email, role, school_id, active, created_at, updated_at
-      `,
-      [name, email, passwordHash, role, role === ROLE_SUPERADMIN ? null : schoolId, active]
-    );
-
-    const created = sanitizeUser(result.rows[0]);
-    const meta = getRequestMeta(req);
-    await writeAuditLog({
-      userId: req.user.id,
-      schoolId: created.schoolId,
-      action: "create_user",
-      resource: "user",
-      resourceId: String(created.id),
-      afterData: created,
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-    });
-
-    res.status(201).json(created);
-  } catch (error) {
-    if (error?.code === "23505") {
-      return res.status(409).json({ error: "duplicate_email" });
+      res.json(result.rows.map((row) => sanitizeUser(row)));
+    } catch (error) {
+      console.error("GET /api/auth/users error:", error);
+      sendInternalError(res, "failed_to_list_users", error);
     }
-    console.error("POST /api/auth/users error:", error);
-    sendInternalError(res, "failed_to_create_user", error);
   }
-});
+);
 
-app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), async (req, res) => {
+app.post(
+  "/api/auth/users",
+  authenticate,
+  requireRoles([ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA]),
+  async (req, res) => {
+    const name = String(req.body?.name || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
+    const role = String(req.body?.role || "").trim();
+    const requestedSchoolId =
+      req.body?.schoolId !== undefined ? toIntId(req.body.schoolId) : null;
+    const active = req.body?.active === false ? false : true;
+
+    if (!name || !email || !password || !ALL_ROLES.includes(role)) {
+      return res.status(400).json({ error: "invalid_user_payload" });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: "password_too_short" });
+    }
+
+    const isSuperAdmin = req.user.role === ROLE_SUPERADMIN;
+    let targetSchoolId = requestedSchoolId;
+
+    if (!isSuperAdmin) {
+      if (!req.user.schoolId) return res.status(403).json({ error: "school_access_denied" });
+      if (role === ROLE_SUPERADMIN) {
+        return res.status(403).json({ error: "cannot_assign_superadmin_role" });
+      }
+      if (requestedSchoolId && Number(requestedSchoolId) !== Number(req.user.schoolId)) {
+        return res.status(403).json({ error: "school_access_denied" });
+      }
+      targetSchoolId = req.user.schoolId;
+    } else if (role === ROLE_SUPERADMIN) {
+      targetSchoolId = null;
+    }
+
+    if (isSchoolBoundRole(role)) {
+      if (!targetSchoolId) {
+        return res.status(400).json({ error: "school_id_required_for_non_superadmin" });
+      }
+      const school = await getSchoolById(pool, targetSchoolId);
+      if (!school) {
+        return res.status(404).json({ error: "school_not_found" });
+      }
+      if (school.active === false) {
+        return res.status(400).json({ error: "school_inactive" });
+      }
+    } else {
+      targetSchoolId = null;
+    }
+
+    try {
+      const passwordHash = await bcrypt.hash(password, 12);
+
+      const result = await pool.query(
+        `
+        INSERT INTO users (name, email, password_hash, role, school_id, active)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        RETURNING id, name, email, role, school_id, active, created_at, updated_at
+        `,
+        [name, email, passwordHash, role, targetSchoolId, active]
+      );
+
+      const created = sanitizeUser(result.rows[0]);
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: created.schoolId || null,
+        action: "create_user",
+        resource: "user",
+        resourceId: String(created.id),
+        afterData: created,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      res.status(201).json(created);
+    } catch (error) {
+      if (error?.code === "23505") {
+        return res.status(409).json({ error: "duplicate_email" });
+      }
+      console.error("POST /api/auth/users error:", error);
+      sendInternalError(res, "failed_to_create_user", error);
+    }
+  }
+);
+
+app.patch(
+  "/api/auth/users/:id",
+  authenticate,
+  requireRoles([ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA]),
+  async (req, res) => {
   const userId = toIntId(req.params.id);
   if (!userId) return res.status(400).json({ error: "invalid_user_id" });
 
   try {
     const beforeResult = await pool.query(
       `
-      SELECT id, name, email, role, school_id, active, created_at, updated_at
-      FROM users
-      WHERE id = $1
+      SELECT u.id, u.name, u.email, u.role, u.school_id, u.active, u.created_at, u.updated_at,
+             s.name AS school_name
+      FROM users u
+      LEFT JOIN schools s ON s.id = u.school_id
+      WHERE u.id = $1
       LIMIT 1
       `,
       [userId]
@@ -818,6 +899,17 @@ app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), 
     }
 
     const before = beforeResult.rows[0];
+    const isSuperAdmin = req.user.role === ROLE_SUPERADMIN;
+    if (!isSuperAdmin) {
+      if (!req.user.schoolId) return res.status(403).json({ error: "school_access_denied" });
+      if (before.role === ROLE_SUPERADMIN) {
+        return res.status(403).json({ error: "cannot_edit_superadmin" });
+      }
+      if (Number(before.school_id) !== Number(req.user.schoolId)) {
+        return res.status(403).json({ error: "school_access_denied" });
+      }
+    }
+
     const updates = [];
     const values = [];
 
@@ -841,6 +933,9 @@ app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), 
     if (Object.prototype.hasOwnProperty.call(req.body, "role")) {
       const role = String(req.body.role || "").trim();
       if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: "invalid_role" });
+      if (!isSuperAdmin && role === ROLE_SUPERADMIN) {
+        return res.status(403).json({ error: "cannot_assign_superadmin_role" });
+      }
       roleFromPayload = role;
       values.push(role);
       updates.push(`role = $${values.length}`);
@@ -851,12 +946,20 @@ app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), 
       if (req.body.schoolId !== null && !schoolId) {
         return res.status(400).json({ error: "invalid_school_id" });
       }
+      if (!isSuperAdmin) {
+        if (!schoolId || Number(schoolId) !== Number(req.user.schoolId)) {
+          return res.status(403).json({ error: "school_access_denied" });
+        }
+      }
       schoolIdFromPayload = schoolId;
       values.push(schoolId);
       updates.push(`school_id = $${values.length}`);
     }
 
     if (Object.prototype.hasOwnProperty.call(req.body, "active")) {
+      if (!isSuperAdmin && req.user.id === userId && req.body.active === false) {
+        return res.status(400).json({ error: "cannot_deactivate_self" });
+      }
       values.push(Boolean(req.body.active));
       updates.push(`active = $${values.length}`);
     }
@@ -880,6 +983,9 @@ app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), 
       schoolIdFromPayload !== undefined ? schoolIdFromPayload : before.school_id || null;
 
     if (nextRole === ROLE_SUPERADMIN) {
+      if (!isSuperAdmin) {
+        return res.status(403).json({ error: "cannot_assign_superadmin_role" });
+      }
       nextSchoolId = null;
       if (schoolIdFromPayload === undefined) {
         values.push(null);
@@ -887,6 +993,18 @@ app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), 
       }
     } else if (!nextSchoolId) {
       return res.status(400).json({ error: "school_id_required_for_non_superadmin" });
+    } else {
+      if (!isSuperAdmin && Number(nextSchoolId) !== Number(req.user.schoolId)) {
+        return res.status(403).json({ error: "school_access_denied" });
+      }
+
+      const school = await getSchoolById(pool, nextSchoolId);
+      if (!school) {
+        return res.status(404).json({ error: "school_not_found" });
+      }
+      if (school.active === false) {
+        return res.status(400).json({ error: "school_inactive" });
+      }
     }
 
     values.push(userId);
@@ -925,7 +1043,8 @@ app.patch("/api/auth/users/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), 
     console.error("PATCH /api/auth/users/:id error:", error);
     sendInternalError(res, "failed_to_update_user", error);
   }
-});
+  }
+);
 
 app.get("/api/schools", authenticate, async (req, res) => {
   try {
