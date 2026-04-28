@@ -51,6 +51,7 @@ const PERMISSION_KEYS = {
     "dashboard_operational_history",
     "config_schedule_write",
     "config_approve_changes",
+    "config_auto_approve_changes",
     "config_templates",
     "config_backup_export",
     "config_backup_import",
@@ -85,6 +86,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       dashboard_operational_history: true,
       config_schedule_write: true,
       config_approve_changes: true,
+      config_auto_approve_changes: true,
       config_templates: true,
       config_backup_export: true,
       config_backup_import: true,
@@ -117,6 +119,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       dashboard_operational_history: false,
       config_schedule_write: true,
       config_approve_changes: false,
+      config_auto_approve_changes: false,
       config_templates: true,
       config_backup_export: true,
       config_backup_import: true,
@@ -149,6 +152,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       dashboard_operational_history: false,
       config_schedule_write: false,
       config_approve_changes: false,
+      config_auto_approve_changes: false,
       config_templates: false,
       config_backup_export: true,
       config_backup_import: false,
@@ -615,6 +619,53 @@ function mapScheduleChangeRequest(row) {
     reviewedAt: row.reviewed_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function canAutoApproveScheduleChanges(user) {
+  if (!user) return false;
+  if (user.role === ROLE_SUPERADMIN) return true;
+  return hasEffectivePermission(user, "features.config_auto_approve_changes");
+}
+
+async function createAutoApprovedScheduleChangeRequest(
+  client,
+  schoolId,
+  proposedBy,
+  reviewedBy,
+  schedulePayload,
+  reviewNote = "Autoaprovado por permissao"
+) {
+  const beforeSchedule = await getScheduleObjectBySchoolId(client, schoolId);
+  const result = await client.query(
+    `
+    INSERT INTO schedule_change_requests (
+      school_id,
+      proposed_by,
+      payload,
+      before_payload,
+      status,
+      review_note,
+      reviewed_by,
+      reviewed_at,
+      created_at,
+      updated_at
+    )
+    VALUES ($1,$2,$3,$4,'approved',$5,$6,NOW(),NOW(),NOW())
+    RETURNING id, school_id, proposed_by, payload, before_payload, status, review_note, reviewed_by, reviewed_at, created_at, updated_at
+    `,
+    [
+      schoolId,
+      proposedBy || null,
+      JSON.stringify(schedulePayload),
+      JSON.stringify(beforeSchedule),
+      reviewNote,
+      reviewedBy || null,
+    ]
+  );
+  return {
+    row: result.rows[0],
+    beforeSchedule,
   };
 }
 
@@ -2297,7 +2348,8 @@ app.put(
         return res.status(404).json({ error: "school_not_found" });
       }
 
-      if (req.user.role !== ROLE_SUPERADMIN) {
+      const shouldAutoApprove = canAutoApproveScheduleChanges(req.user);
+      if (!shouldAutoApprove) {
         const requestRow = await upsertPendingScheduleChangeRequest(
           client,
           req.targetSchoolId,
@@ -2332,12 +2384,56 @@ app.put(
         });
       }
 
-      const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      let beforeSchedule;
+      let autoApprovedRow = null;
+
+      if (req.user.role === ROLE_SUPERADMIN) {
+        beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      } else {
+        const autoApproved = await createAutoApprovedScheduleChangeRequest(
+          client,
+          req.targetSchoolId,
+          req.user.id || null,
+          req.user.id || null,
+          schedule
+        );
+        beforeSchedule = autoApproved.beforeSchedule;
+        autoApprovedRow = autoApproved.row;
+      }
+
       await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
 
       await client.query("COMMIT");
 
       const meta = getRequestMeta(req);
+      if (autoApprovedRow) {
+        await writeAuditLog({
+          userId: req.user.id,
+          schoolId: req.targetSchoolId,
+          action: "auto_approve_schedule_change",
+          resource: "schedule_change_request",
+          resourceId: String(autoApprovedRow.id),
+          beforeData: beforeSchedule,
+          afterData: schedule,
+          meta: {
+            payloadSummary: summarizeSchedule(schedule),
+          },
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+
+        return res.json({
+          autoApproved: true,
+          schedule,
+          request: mapScheduleChangeRequest({
+            ...autoApprovedRow,
+            school_name: school.name,
+            proposed_by_name: req.user.name || req.user.email || null,
+            reviewed_by_name: req.user.name || req.user.email || null,
+          }),
+        });
+      }
+
       await writeAuditLog({
         userId: req.user.id,
         schoolId: req.targetSchoolId,
@@ -2350,7 +2446,7 @@ app.put(
         userAgent: meta.userAgent,
       });
 
-      res.json(schedule);
+      return res.json(schedule);
     } catch (error) {
       await client.query("ROLLBACK");
       console.error("PUT /api/schools/:id/schedule error:", error);
@@ -2431,16 +2527,28 @@ app.post(
         `
         SELECT scr.id, scr.school_id, scr.proposed_by, scr.payload, scr.before_payload, scr.status, scr.review_note,
                scr.reviewed_by, scr.reviewed_at, scr.created_at, scr.updated_at,
-               s.name AS school_name,
-               pu.name AS proposed_by_name,
-               ru.name AS reviewed_by_name
+               (
+                 SELECT s.name
+                 FROM schools s
+                 WHERE s.id = scr.school_id
+                 LIMIT 1
+               ) AS school_name,
+               (
+                 SELECT pu.name
+                 FROM users pu
+                 WHERE pu.id = scr.proposed_by
+                 LIMIT 1
+               ) AS proposed_by_name,
+               (
+                 SELECT ru.name
+                 FROM users ru
+                 WHERE ru.id = scr.reviewed_by
+                 LIMIT 1
+               ) AS reviewed_by_name
         FROM schedule_change_requests scr
-        LEFT JOIN schools s ON s.id = scr.school_id
-        LEFT JOIN users pu ON pu.id = scr.proposed_by
-        LEFT JOIN users ru ON ru.id = scr.reviewed_by
         WHERE scr.id = $1
         LIMIT 1
-        FOR UPDATE
+        FOR UPDATE OF scr
         `,
         [requestId]
       );
@@ -2770,7 +2878,8 @@ app.post(
     }
 
     const payload = normalizeSchedulePayload(template.payload);
-    if (req.user.role !== ROLE_SUPERADMIN) {
+    const shouldAutoApprove = canAutoApproveScheduleChanges(req.user);
+    if (!shouldAutoApprove) {
       const requestRow = await upsertPendingScheduleChangeRequest(
         client,
         targetSchoolId,
@@ -2806,11 +2915,59 @@ app.post(
       });
     }
 
-    const beforeSchedule = await getScheduleObjectBySchoolId(client, targetSchoolId);
+    let beforeSchedule;
+    let autoApprovedRow = null;
+    if (req.user.role === ROLE_SUPERADMIN) {
+      beforeSchedule = await getScheduleObjectBySchoolId(client, targetSchoolId);
+    } else {
+      const autoApproved = await createAutoApprovedScheduleChangeRequest(
+        client,
+        targetSchoolId,
+        req.user.id || null,
+        req.user.id || null,
+        payload
+      );
+      beforeSchedule = autoApproved.beforeSchedule;
+      autoApprovedRow = autoApproved.row;
+    }
+
     await replaceSchoolSchedule(client, targetSchoolId, payload);
     await client.query("COMMIT");
 
     const meta = getRequestMeta(req);
+    if (autoApprovedRow) {
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: targetSchoolId,
+        action: "auto_approve_template_clone_to_school",
+        resource: "schedule_change_request",
+        resourceId: String(autoApprovedRow.id),
+        beforeData: beforeSchedule,
+        afterData: payload,
+        meta: {
+          templateName: template.name,
+          sourceSchoolId: template.source_school_id,
+          targetSchoolId,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      return res.json({
+        success: true,
+        autoApproved: true,
+        templateId: template.id,
+        targetSchoolId,
+        schedule: payload,
+        request: mapScheduleChangeRequest({
+          ...autoApprovedRow,
+          school_name: targetSchool.name,
+          proposed_by_name: req.user.name || req.user.email || null,
+          reviewed_by_name: req.user.name || req.user.email || null,
+        }),
+      });
+    }
+
     await writeAuditLog({
       userId: req.user.id,
       schoolId: targetSchoolId,
@@ -2828,7 +2985,7 @@ app.post(
       userAgent: meta.userAgent,
     });
 
-    res.json({
+    return res.json({
       success: true,
       templateId: template.id,
       targetSchoolId,
@@ -3005,7 +3162,8 @@ app.post(
         return res.status(404).json({ error: "school_not_found" });
       }
 
-      if (req.user.role !== ROLE_SUPERADMIN) {
+      const shouldAutoApprove = canAutoApproveScheduleChanges(req.user);
+      if (!shouldAutoApprove) {
         const requestRow = await upsertPendingScheduleChangeRequest(
           client,
           req.targetSchoolId,
@@ -3038,11 +3196,52 @@ app.post(
         });
       }
 
-      const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      let beforeSchedule;
+      let autoApprovedRow = null;
+      if (req.user.role === ROLE_SUPERADMIN) {
+        beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      } else {
+        const autoApproved = await createAutoApprovedScheduleChangeRequest(
+          client,
+          req.targetSchoolId,
+          req.user.id || null,
+          req.user.id || null,
+          schedule
+        );
+        beforeSchedule = autoApproved.beforeSchedule;
+        autoApprovedRow = autoApproved.row;
+      }
+
       await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
       await client.query("COMMIT");
 
       const meta = getRequestMeta(req);
+      if (autoApprovedRow) {
+        await writeAuditLog({
+          userId: req.user.id,
+          schoolId: req.targetSchoolId,
+          action: "auto_approve_restore_backup",
+          resource: "schedule_change_request",
+          resourceId: String(autoApprovedRow.id),
+          beforeData: beforeSchedule,
+          afterData: schedule,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+
+        return res.json({
+          success: true,
+          autoApproved: true,
+          schedule,
+          request: mapScheduleChangeRequest({
+            ...autoApprovedRow,
+            school_name: school.name,
+            proposed_by_name: req.user.name || req.user.email || null,
+            reviewed_by_name: req.user.name || req.user.email || null,
+          }),
+        });
+      }
+
       await writeAuditLog({
         userId: req.user.id,
         schoolId: req.targetSchoolId,
@@ -3055,7 +3254,7 @@ app.post(
         userAgent: meta.userAgent,
       });
 
-      res.json({ success: true, schedule });
+      return res.json({ success: true, schedule });
     } catch (error) {
       await client.query("ROLLBACK");
       console.error("POST /api/schools/:id/restore error:", error);
@@ -3099,7 +3298,8 @@ app.post(
       const backup = backupResult.rows[0];
       const schedule = normalizeSchedulePayload(backup.schedule);
 
-      if (req.user.role !== ROLE_SUPERADMIN) {
+      const shouldAutoApprove = canAutoApproveScheduleChanges(req.user);
+      if (!shouldAutoApprove) {
         const school = await getSchoolById(client, req.targetSchoolId);
         const requestRow = await upsertPendingScheduleChangeRequest(
           client,
@@ -3134,11 +3334,59 @@ app.post(
         });
       }
 
-      const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      let beforeSchedule;
+      let autoApprovedRow = null;
+      if (req.user.role === ROLE_SUPERADMIN) {
+        beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
+      } else {
+        const autoApproved = await createAutoApprovedScheduleChangeRequest(
+          client,
+          req.targetSchoolId,
+          req.user.id || null,
+          req.user.id || null,
+          schedule
+        );
+        beforeSchedule = autoApproved.beforeSchedule;
+        autoApprovedRow = autoApproved.row;
+      }
+
       await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
       await client.query("COMMIT");
 
       const meta = getRequestMeta(req);
+      if (autoApprovedRow) {
+        await writeAuditLog({
+          userId: req.user.id,
+          schoolId: req.targetSchoolId,
+          action: "auto_approve_restore_backup_snapshot",
+          resource: "schedule_change_request",
+          resourceId: String(autoApprovedRow.id),
+          beforeData: beforeSchedule,
+          afterData: schedule,
+          meta: {
+            backupId: backup.id,
+            trigger: backup.trigger,
+            backupCreatedAt: backup.created_at,
+            backupCreatedBy: backup.created_by,
+          },
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+
+        return res.json({
+          success: true,
+          autoApproved: true,
+          backupId: backup.id,
+          schedule,
+          request: mapScheduleChangeRequest({
+            ...autoApprovedRow,
+            school_name: (await getSchoolById(client, req.targetSchoolId))?.name || null,
+            proposed_by_name: req.user.name || req.user.email || null,
+            reviewed_by_name: req.user.name || req.user.email || null,
+          }),
+        });
+      }
+
       await writeAuditLog({
         userId: req.user.id,
         schoolId: req.targetSchoolId,
@@ -3156,7 +3404,7 @@ app.post(
         userAgent: meta.userAgent,
       });
 
-      res.json({ success: true, backupId: backup.id, schedule });
+      return res.json({ success: true, backupId: backup.id, schedule });
     } catch (error) {
       await client.query("ROLLBACK");
       console.error("POST /api/schools/:id/restore-backup error:", error);

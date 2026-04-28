@@ -25,6 +25,7 @@
       "dashboard_operational_history",
       "config_schedule_write",
       "config_approve_changes",
+      "config_auto_approve_changes",
       "config_templates",
       "config_backup_export",
       "config_backup_import",
@@ -58,6 +59,7 @@
         dashboard_operational_history: true,
         config_schedule_write: true,
         config_approve_changes: true,
+        config_auto_approve_changes: true,
         config_templates: true,
         config_backup_export: true,
         config_backup_import: true,
@@ -90,6 +92,7 @@
         dashboard_operational_history: false,
         config_schedule_write: true,
         config_approve_changes: false,
+        config_auto_approve_changes: false,
         config_templates: true,
         config_backup_export: true,
         config_backup_import: true,
@@ -122,6 +125,7 @@
         dashboard_operational_history: false,
         config_schedule_write: false,
         config_approve_changes: false,
+        config_auto_approve_changes: false,
         config_templates: false,
         config_backup_export: true,
         config_backup_import: false,
@@ -155,6 +159,7 @@
       dashboard_operational_history: "Dashboard: grafico operacional",
       config_schedule_write: "Config: editar horarios",
       config_approve_changes: "Config: aprovar mudancas de horario",
+      config_auto_approve_changes: "Config: autoaprovar mudancas de horario",
       config_templates: "Config: templates",
       config_backup_export: "Config: exportar backup",
       config_backup_import: "Config: importar backup",
@@ -187,6 +192,7 @@
       features: [
         "config_schedule_write",
         "config_approve_changes",
+        "config_auto_approve_changes",
         "config_templates",
         "config_backup_export",
         "config_backup_import",
@@ -225,6 +231,7 @@
           dashboard_operational_history: false,
           config_schedule_write: true,
           config_approve_changes: false,
+          config_auto_approve_changes: false,
           config_templates: true,
           config_backup_export: true,
           config_backup_import: false,
@@ -261,6 +268,7 @@
           dashboard_operational_history: false,
           config_schedule_write: false,
           config_approve_changes: false,
+          config_auto_approve_changes: false,
           config_templates: false,
           config_backup_export: false,
           config_backup_import: false,
@@ -297,6 +305,7 @@
           dashboard_operational_history: false,
           config_schedule_write: true,
           config_approve_changes: false,
+          config_auto_approve_changes: false,
           config_templates: false,
           config_backup_export: true,
           config_backup_import: true,
@@ -2322,6 +2331,20 @@
     return `Manha: ${summary.morning} | Tarde: ${summary.afternoon} | Sexta: ${summary.afternoonFriday}`;
   }
 
+  function showScheduleChangeResultMessage(payload, successMessage = "") {
+    if (payload?.pendingApproval) {
+      alert("Solicitacao enviada para aprovacao manual.");
+      return;
+    }
+    if (payload?.autoApproved) {
+      alert("Mudanca autoaprovada e publicada.");
+      return;
+    }
+    if (successMessage) {
+      alert(successMessage);
+    }
+  }
+
   async function loadBackupSnapshots() {
     if (!backupSnapshotSelect) return;
     const schoolId = getCurrentSchoolId();
@@ -2441,11 +2464,7 @@
       await loadScheduleChangeRequests();
       await loadBackupSnapshots();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      if (payload?.pendingApproval) {
-        alert("Solicitacao enviada para aprovacao do superadmin.");
-      } else {
-        alert("Backup restaurado com sucesso.");
-      }
+      showScheduleChangeResultMessage(payload, "Backup restaurado com sucesso.");
     } catch (error) {
       console.error("Erro ao restaurar backup selecionado:", error);
       alert("Erro ao restaurar backup.");
@@ -3268,9 +3287,7 @@
       await loadConfigSchedule();
       await loadScheduleChangeRequests();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      if (saveResult?.body?.pendingApproval) {
-        alert("Solicitacao enviada para aprovacao do superadmin.");
-      }
+      showScheduleChangeResultMessage(saveResult?.body);
     } catch (err) {
       console.error("Erro ao remover sinal:", err);
       alert("Erro ao remover horario.");
@@ -3425,9 +3442,7 @@
       await loadConfigSchedule();
       await loadScheduleChangeRequests();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      if (saveResult?.body?.pendingApproval) {
-        alert("Solicitacao enviada para aprovacao do superadmin.");
-      }
+      showScheduleChangeResultMessage(saveResult?.body);
     } catch (err) {
       console.error("Erro ao salvar horario:", err);
       alert("Erro ao salvar horario.");
@@ -3502,11 +3517,7 @@
       await loadConfigSchedule();
       await loadScheduleChangeRequests();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      if (payload?.pendingApproval) {
-        alert("Solicitacao enviada para aprovacao do superadmin.");
-      } else {
-        alert("Template aplicado com sucesso.");
-      }
+      showScheduleChangeResultMessage(payload, "Template aplicado com sucesso.");
     } catch (err) {
       console.error("Erro ao aplicar template:", err);
       alert("Erro ao aplicar template.");
@@ -3602,11 +3613,7 @@
       await loadScheduleChangeRequests();
       await loadBackupSnapshots();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      if (responsePayload?.pendingApproval) {
-        alert("Solicitacao enviada para aprovacao do superadmin.");
-      } else {
-        alert("Backup importado com sucesso.");
-      }
+      showScheduleChangeResultMessage(responsePayload, "Backup importado com sucesso.");
     } catch (err) {
       console.error("Erro ao importar backup:", err);
       alert("Erro ao importar backup. Verifique o JSON.");
