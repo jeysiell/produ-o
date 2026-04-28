@@ -19,6 +19,15 @@ const DAILY_BACKUP_INTERVAL_MS = Number(process.env.DAILY_BACKUP_INTERVAL_MS) ||
 const DEFAULT_ADMIN_EMAIL = process.env.DEFAULT_ADMIN_EMAIL || "admin@sinaltech.local";
 const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123456";
 const DEFAULT_ADMIN_NAME = process.env.DEFAULT_ADMIN_NAME || "Super Admin";
+const SIMULATION_TOKEN_TTL = process.env.SIMULATION_TOKEN_TTL || "30m";
+const SERVER_STARTED_AT = new Date();
+
+const runtimeStats = {
+  lastMonitoringSweepAt: null,
+  lastMonitoringSweepResult: null,
+  lastDailyBackupSweepAt: null,
+  lastDailyBackupSweepResult: null,
+};
 
 const ROLE_SUPERADMIN = "superadmin";
 const ROLE_ADMIN_ESCOLA = "admin_escola";
@@ -30,12 +39,18 @@ const PERIODS = ["morning", "afternoon", "afternoonFriday"];
 const PERMISSION_KEYS = {
   menus: ["dashboard", "config", "schools", "users", "audit"],
   features: [
+    "dashboard_manual_section",
     "dashboard_manual_play",
+    "dashboard_last_signal",
+    "dashboard_next_signal",
+    "dashboard_schedule_interface",
     "dashboard_database_status",
     "dashboard_open_alerts",
     "dashboard_schools_without_schedule",
     "dashboard_monitor_alerts",
+    "dashboard_operational_history",
     "config_schedule_write",
+    "config_approve_changes",
     "config_templates",
     "config_backup_export",
     "config_backup_import",
@@ -58,12 +73,18 @@ const ROLE_PERMISSION_DEFAULTS = {
       audit: true,
     },
     features: {
+      dashboard_manual_section: true,
       dashboard_manual_play: false,
+      dashboard_last_signal: true,
+      dashboard_next_signal: true,
+      dashboard_schedule_interface: true,
       dashboard_database_status: true,
       dashboard_open_alerts: true,
       dashboard_schools_without_schedule: true,
       dashboard_monitor_alerts: true,
+      dashboard_operational_history: true,
       config_schedule_write: true,
+      config_approve_changes: true,
       config_templates: true,
       config_backup_export: true,
       config_backup_import: true,
@@ -84,12 +105,18 @@ const ROLE_PERMISSION_DEFAULTS = {
       audit: true,
     },
     features: {
+      dashboard_manual_section: true,
       dashboard_manual_play: true,
+      dashboard_last_signal: true,
+      dashboard_next_signal: true,
+      dashboard_schedule_interface: true,
       dashboard_database_status: true,
       dashboard_open_alerts: true,
       dashboard_schools_without_schedule: true,
       dashboard_monitor_alerts: true,
+      dashboard_operational_history: false,
       config_schedule_write: true,
+      config_approve_changes: false,
       config_templates: true,
       config_backup_export: true,
       config_backup_import: true,
@@ -110,12 +137,18 @@ const ROLE_PERMISSION_DEFAULTS = {
       audit: true,
     },
     features: {
+      dashboard_manual_section: true,
       dashboard_manual_play: true,
+      dashboard_last_signal: true,
+      dashboard_next_signal: true,
+      dashboard_schedule_interface: true,
       dashboard_database_status: true,
       dashboard_open_alerts: true,
       dashboard_schools_without_schedule: true,
       dashboard_monitor_alerts: true,
+      dashboard_operational_history: false,
       config_schedule_write: false,
+      config_approve_changes: false,
       config_templates: false,
       config_backup_export: true,
       config_backup_import: false,
@@ -225,6 +258,25 @@ app.disable("x-powered-by");
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+app.use("/api", (req, res, next) => {
+  if (!WRITE_METHODS.has(String(req.method || "").toUpperCase())) return next();
+  if (req.path === "/auth/login") return next();
+
+  const token = getBearerToken(req);
+  if (!token) return next();
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded?.simulation === true) {
+      return res.status(403).json({ error: "simulation_read_only" });
+    }
+  } catch (_err) {
+    // Ignore invalid tokens here; auth middleware handles auth errors later.
+  }
+  return next();
+});
+
 function slugify(value) {
   return String(value || "")
     .trim()
@@ -251,6 +303,10 @@ function buildEmptyPermissions() {
     menus: Object.fromEntries(PERMISSION_KEYS.menus.map((key) => [key, false])),
     features: Object.fromEntries(PERMISSION_KEYS.features.map((key) => [key, false])),
   };
+}
+
+function hasOwn(objectValue, key) {
+  return Object.prototype.hasOwnProperty.call(objectValue || {}, key);
 }
 
 function normalizePermissionsPayload(rawPermissions, options = {}) {
@@ -294,15 +350,19 @@ function getEffectivePermissions(role, customPermissions) {
   const effective = buildEmptyPermissions();
 
   PERMISSION_KEYS.menus.forEach((key) => {
-    const allowByRole = Boolean(defaults.menus[key]);
-    const explicit = normalizedCustom.menus[key];
-    effective.menus[key] = allowByRole ? explicit !== false : false;
+    if (hasOwn(normalizedCustom.menus, key)) {
+      effective.menus[key] = Boolean(normalizedCustom.menus[key]);
+      return;
+    }
+    effective.menus[key] = Boolean(defaults.menus[key]);
   });
 
   PERMISSION_KEYS.features.forEach((key) => {
-    const allowByRole = Boolean(defaults.features[key]);
-    const explicit = normalizedCustom.features[key];
-    effective.features[key] = allowByRole ? explicit !== false : false;
+    if (hasOwn(normalizedCustom.features, key)) {
+      effective.features[key] = Boolean(normalizedCustom.features[key]);
+      return;
+    }
+    effective.features[key] = Boolean(defaults.features[key]);
   });
 
   return effective;
@@ -533,6 +593,85 @@ function summarizeSchedule(scheduleObject) {
   };
 }
 
+function mapScheduleChangeRequest(row) {
+  if (!row) return null;
+  const payload = row.payload && typeof row.payload === "object" ? row.payload : {};
+  const beforePayload =
+    row.before_payload && typeof row.before_payload === "object" ? row.before_payload : {};
+  return {
+    id: row.id,
+    schoolId: row.school_id,
+    schoolName: row.school_name || null,
+    proposedBy: row.proposed_by || null,
+    proposedByName: row.proposed_by_name || null,
+    beforePayload,
+    beforeSummary: summarizeSchedule(beforePayload),
+    payload,
+    payloadSummary: summarizeSchedule(payload),
+    status: row.status,
+    reviewNote: row.review_note || null,
+    reviewedBy: row.reviewed_by || null,
+    reviewedByName: row.reviewed_by_name || null,
+    reviewedAt: row.reviewed_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function upsertPendingScheduleChangeRequest(client, schoolId, proposedBy, schedulePayload) {
+  const beforeSchedule = await getScheduleObjectBySchoolId(client, schoolId);
+  const pendingResult = await client.query(
+    `
+    SELECT id
+    FROM schedule_change_requests
+    WHERE school_id = $1
+      AND status = 'pending'
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [schoolId]
+  );
+
+  if (pendingResult.rowCount) {
+    const updatePending = await client.query(
+      `
+      UPDATE schedule_change_requests
+      SET payload = $1,
+          before_payload = $2,
+          proposed_by = $3,
+          review_note = NULL,
+          reviewed_by = NULL,
+          reviewed_at = NULL,
+          updated_at = NOW()
+      WHERE id = $4
+      RETURNING id, school_id, proposed_by, payload, before_payload, status, review_note, reviewed_by, reviewed_at, created_at, updated_at
+      `,
+      [
+        JSON.stringify(schedulePayload),
+        JSON.stringify(beforeSchedule),
+        proposedBy || null,
+        pendingResult.rows[0].id,
+      ]
+    );
+    return updatePending.rows[0];
+  }
+
+  const insertPending = await client.query(
+    `
+    INSERT INTO schedule_change_requests (school_id, proposed_by, payload, before_payload, status)
+    VALUES ($1,$2,$3,$4,'pending')
+    RETURNING id, school_id, proposed_by, payload, before_payload, status, review_note, reviewed_by, reviewed_at, created_at, updated_at
+    `,
+    [
+      schoolId,
+      proposedBy || null,
+      JSON.stringify(schedulePayload),
+      JSON.stringify(beforeSchedule),
+    ]
+  );
+  return insertPending.rows[0];
+}
+
 async function saveSchoolBackupSnapshot(client, options) {
   const trigger = String(options?.trigger || "manual").trim() || "manual";
   const schoolId = toIntId(options?.schoolId);
@@ -585,6 +724,85 @@ async function saveSchoolBackupSnapshot(client, options) {
   };
 }
 
+async function recordOperationalMetricSample(client, sample) {
+  const metricDate = String(sample?.metricDate || new Date().toISOString().slice(0, 10));
+  const schoolId = toIntId(sample?.schoolId) || null;
+  const dbLatencyMs = Number.isFinite(sample?.dbLatencyMs)
+    ? Math.max(0, Number(sample.dbLatencyMs))
+    : null;
+  const openAlerts = Number.isFinite(sample?.openAlerts) ? Math.max(0, Number(sample.openAlerts)) : 0;
+  const playbackFailures = Number.isFinite(sample?.playbackFailures)
+    ? Math.max(0, Number(sample.playbackFailures))
+    : 0;
+  const pendingApprovals = Number.isFinite(sample?.pendingApprovals)
+    ? Math.max(0, Number(sample.pendingApprovals))
+    : 0;
+  const schoolsWithoutSchedule = Number.isFinite(sample?.schoolsWithoutSchedule)
+    ? Math.max(0, Number(sample.schoolsWithoutSchedule))
+    : 0;
+
+  await client.query(
+    `
+    INSERT INTO operational_daily_metrics (
+      metric_date,
+      school_id,
+      db_latency_avg_ms,
+      db_latency_max_ms,
+      open_alerts,
+      playback_failures,
+      pending_approvals,
+      schools_without_schedule,
+      samples,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1,
+      $2,
+      $3,
+      $3,
+      $4,
+      $5,
+      $6,
+      $7,
+      1,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (metric_date, school_id)
+    DO UPDATE SET
+      db_latency_avg_ms = CASE
+        WHEN EXCLUDED.db_latency_avg_ms IS NULL THEN operational_daily_metrics.db_latency_avg_ms
+        WHEN operational_daily_metrics.db_latency_avg_ms IS NULL THEN EXCLUDED.db_latency_avg_ms
+        ELSE (
+          (operational_daily_metrics.db_latency_avg_ms * operational_daily_metrics.samples) +
+          EXCLUDED.db_latency_avg_ms
+        ) / (operational_daily_metrics.samples + 1)
+      END,
+      db_latency_max_ms = CASE
+        WHEN EXCLUDED.db_latency_max_ms IS NULL THEN operational_daily_metrics.db_latency_max_ms
+        WHEN operational_daily_metrics.db_latency_max_ms IS NULL THEN EXCLUDED.db_latency_max_ms
+        ELSE GREATEST(operational_daily_metrics.db_latency_max_ms, EXCLUDED.db_latency_max_ms)
+      END,
+      open_alerts = EXCLUDED.open_alerts,
+      playback_failures = EXCLUDED.playback_failures,
+      pending_approvals = EXCLUDED.pending_approvals,
+      schools_without_schedule = EXCLUDED.schools_without_schedule,
+      samples = operational_daily_metrics.samples + 1,
+      updated_at = NOW()
+    `,
+    [
+      metricDate,
+      schoolId,
+      dbLatencyMs,
+      openAlerts,
+      playbackFailures,
+      pendingApprovals,
+      schoolsWithoutSchedule,
+    ]
+  );
+}
+
 async function runDailyBackupSweep(trigger = "daily", actorUserId = null) {
   const client = await pool.connect();
   try {
@@ -609,12 +827,19 @@ async function runDailyBackupSweep(trigger = "daily", actorUserId = null) {
       if (snapshot) created += 1;
     }
 
-    return {
+    const result = {
       checkedSchools: schools.rowCount,
       createdBackups: created,
       trigger,
       createdAt: new Date().toISOString(),
     };
+    runtimeStats.lastDailyBackupSweepAt = result.createdAt;
+    runtimeStats.lastDailyBackupSweepResult = {
+      trigger: result.trigger,
+      checkedSchools: result.checkedSchools,
+      createdBackups: result.createdBackups,
+    };
+    return result;
   } finally {
     client.release();
   }
@@ -628,6 +853,24 @@ function canAccessSchool(user, schoolId) {
 
 function isSchoolBoundRole(role) {
   return role === ROLE_ADMIN_ESCOLA || role === ROLE_SOMENTE_LEITURA;
+}
+
+function signAccessToken(payload, expiresIn = JWT_EXPIRES_IN) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+}
+
+function buildSimulationContext(actorUser, options = {}) {
+  return {
+    active: true,
+    type: options.type || "user",
+    actorUserId: actorUser?.id || null,
+    actorName: actorUser?.name || actorUser?.email || null,
+    actorEmail: actorUser?.email || null,
+    targetUserId: options.targetUserId || null,
+    targetRole: options.targetRole || null,
+    targetSchoolId: options.targetSchoolId || null,
+    issuedAt: new Date().toISOString(),
+  };
 }
 
 function getBearerToken(req) {
@@ -647,11 +890,11 @@ async function authenticate(req, res, next) {
     return res.status(401).json({ error: "invalid_token" });
   }
 
-  const userId = toIntId(decoded?.sub);
-  if (!userId) return res.status(401).json({ error: "invalid_token" });
+  const requesterUserId = toIntId(decoded?.sub);
+  if (!requesterUserId) return res.status(401).json({ error: "invalid_token" });
 
   try {
-    const result = await pool.query(
+    const baseUserResult = await pool.query(
       `
       SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
              s.name AS school_name, s.active AS school_active
@@ -660,28 +903,77 @@ async function authenticate(req, res, next) {
       WHERE u.id = $1 AND u.active = TRUE
       LIMIT 1
       `,
-      [userId]
+      [requesterUserId]
     );
 
-    if (!result.rowCount) {
+    if (!baseUserResult.rowCount) {
       return res.status(401).json({ error: "user_not_found_or_inactive" });
     }
 
-    const userRow = result.rows[0];
-    if (isSchoolBoundRole(userRow.role)) {
-      if (!userRow.school_id) {
+    const baseUserRow = baseUserResult.rows[0];
+    if (isSchoolBoundRole(baseUserRow.role)) {
+      if (!baseUserRow.school_id) {
         return res.status(403).json({ error: "user_school_not_configured" });
       }
-      if (userRow.school_active !== true) {
+      if (baseUserRow.school_active !== true) {
         return res.status(403).json({ error: "school_inactive_or_not_found" });
       }
     }
 
-    req.user = sanitizeUser(userRow);
-    next();
+    const baseUser = sanitizeUser(baseUserRow);
+    req.actorUser = baseUser;
+
+    if (decoded?.simulation === true) {
+      if (baseUser.role !== ROLE_SUPERADMIN) {
+        return res.status(403).json({ error: "simulation_requires_superadmin" });
+      }
+
+      const simulatedUserId = toIntId(decoded?.simulatedUserId);
+      if (simulatedUserId) {
+        const simulatedResult = await pool.query(
+          `
+          SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+                 s.name AS school_name, s.active AS school_active
+          FROM users u
+          LEFT JOIN schools s ON s.id = u.school_id
+          WHERE u.id = $1 AND u.active = TRUE
+          LIMIT 1
+          `,
+          [simulatedUserId]
+        );
+        if (!simulatedResult.rowCount) {
+          return res.status(404).json({ error: "simulation_user_not_found" });
+        }
+
+        const simulatedRow = simulatedResult.rows[0];
+        if (isSchoolBoundRole(simulatedRow.role)) {
+          if (!simulatedRow.school_id) {
+            return res.status(403).json({ error: "user_school_not_configured" });
+          }
+          if (simulatedRow.school_active !== true) {
+            return res.status(403).json({ error: "school_inactive_or_not_found" });
+          }
+        }
+
+        const simulationContext = buildSimulationContext(baseUser, {
+          type: "user",
+          targetUserId: simulatedUserId,
+          targetRole: simulatedRow.role,
+          targetSchoolId: simulatedRow.school_id || null,
+        });
+        req.user = { ...sanitizeUser(simulatedRow), simulation: simulationContext };
+        req.simulation = simulationContext;
+        return next();
+      }
+      return res.status(400).json({ error: "invalid_simulation_payload" });
+    }
+
+    req.user = baseUser;
+    req.simulation = null;
+    return next();
   } catch (error) {
     console.error("Authentication query error:", error);
-    sendInternalError(res, "auth_query_failed", error);
+    return sendInternalError(res, "auth_query_failed", error);
   }
 }
 
@@ -697,6 +989,13 @@ function requireRoles(allowedRoles) {
 function requireWriteAccess(req, res, next) {
   if (!req.user || !WRITE_ROLES.includes(req.user.role)) {
     return res.status(403).json({ error: "read_only_profile" });
+  }
+  next();
+}
+
+function requireNotInSimulation(req, res, next) {
+  if (req.simulation?.active) {
+    return res.status(403).json({ error: "simulation_read_only" });
   }
   next();
 }
@@ -835,11 +1134,18 @@ async function runMonitoringSweep(trigger = "interval", actorUserId = null) {
       }
     }
 
-    return {
+    const result = {
       checkedSchools: schoolsResult.rowCount,
       schoolsWithoutSchedule,
       checkedAt: new Date().toISOString(),
     };
+    runtimeStats.lastMonitoringSweepAt = result.checkedAt;
+    runtimeStats.lastMonitoringSweepResult = {
+      trigger,
+      checkedSchools: result.checkedSchools,
+      schoolsWithoutSchedule: result.schoolsWithoutSchedule,
+    };
+    return result;
   } finally {
     client.release();
   }
@@ -953,6 +1259,45 @@ async function ensureEnterpriseSchema() {
     `);
 
     await client.query(`
+      CREATE TABLE IF NOT EXISTS schedule_change_requests (
+        id BIGSERIAL PRIMARY KEY,
+        school_id INTEGER NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+        proposed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        payload JSONB NOT NULL,
+        before_payload JSONB,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+        review_note TEXT,
+        reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      ALTER TABLE schedule_change_requests
+      ADD COLUMN IF NOT EXISTS before_payload JSONB
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS operational_daily_metrics (
+        id BIGSERIAL PRIMARY KEY,
+        metric_date DATE NOT NULL,
+        school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE,
+        db_latency_avg_ms NUMERIC(10,2),
+        db_latency_max_ms NUMERIC(10,2),
+        open_alerts INTEGER NOT NULL DEFAULT 0,
+        playback_failures INTEGER NOT NULL DEFAULT 0,
+        pending_approvals INTEGER NOT NULL DEFAULT 0,
+        schools_without_schedule INTEGER NOT NULL DEFAULT 0,
+        samples INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (metric_date, school_id)
+      )
+    `);
+
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_schedules_school_id ON schedules(school_id)
     `);
     await client.query(`
@@ -966,6 +1311,12 @@ async function ensureEnterpriseSchema() {
     `);
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_school_backups_school_created_at ON school_backups(school_id, created_at DESC)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_schedule_change_requests_school_status ON schedule_change_requests(school_id, status, created_at DESC)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_operational_daily_metrics_school_date ON operational_daily_metrics(school_id, metric_date DESC)
     `);
 
     await client.query("COMMIT");
@@ -1075,14 +1426,12 @@ app.post("/api/auth/login", async (req, res) => {
       }
     }
 
-    const token = jwt.sign(
+    const token = signAccessToken(
       {
         sub: user.id,
         role: user.role,
         schoolId: user.school_id || null,
-      },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      }
     );
 
     const meta = getRequestMeta(req);
@@ -1107,6 +1456,87 @@ app.post("/api/auth/login", async (req, res) => {
 app.get("/api/auth/me", authenticate, (req, res) => {
   res.json({ user: req.user });
 });
+
+app.post(
+  "/api/auth/simulate/user/:id",
+  authenticate,
+  requireRoles([ROLE_SUPERADMIN]),
+  requireNotInSimulation,
+  async (req, res) => {
+    const targetUserId = toIntId(req.params.id);
+    if (!targetUserId) return res.status(400).json({ error: "invalid_user_id" });
+
+    try {
+      const targetResult = await pool.query(
+        `
+        SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+               s.name AS school_name, s.active AS school_active
+        FROM users u
+        LEFT JOIN schools s ON s.id = u.school_id
+        WHERE u.id = $1 AND u.active = TRUE
+        LIMIT 1
+        `,
+        [targetUserId]
+      );
+
+      if (!targetResult.rowCount) {
+        return res.status(404).json({ error: "simulation_user_not_found" });
+      }
+
+      const targetRow = targetResult.rows[0];
+      if (isSchoolBoundRole(targetRow.role)) {
+        if (!targetRow.school_id) {
+          return res.status(403).json({ error: "user_school_not_configured" });
+        }
+        if (targetRow.school_active !== true) {
+          return res.status(403).json({ error: "school_inactive_or_not_found" });
+        }
+      }
+
+      const simulationToken = signAccessToken(
+        {
+          sub: req.user.id,
+          simulation: true,
+          simulatedUserId: targetRow.id,
+        },
+        SIMULATION_TOKEN_TTL
+      );
+
+      const simulationContext = buildSimulationContext(req.user, {
+        type: "user",
+        targetUserId: targetRow.id,
+        targetRole: targetRow.role,
+        targetSchoolId: targetRow.school_id || null,
+      });
+      const simulatedUser = { ...sanitizeUser(targetRow), simulation: simulationContext };
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: simulatedUser.schoolId || null,
+        action: "start_user_simulation",
+        resource: "auth_simulation",
+        resourceId: String(simulatedUser.id),
+        afterData: {
+          simulationType: "user",
+          targetUserId: simulatedUser.id,
+          targetRole: simulatedUser.role,
+          targetSchoolId: simulatedUser.schoolId || null,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      return res.json({
+        token: simulationToken,
+        user: simulatedUser,
+      });
+    } catch (error) {
+      console.error("POST /api/auth/simulate/user/:id error:", error);
+      return sendInternalError(res, "failed_to_start_user_simulation", error);
+    }
+  }
+);
 
 app.post("/api/auth/change-password", authenticate, async (req, res) => {
   const currentPassword = String(req.body?.currentPassword || "");
@@ -1822,7 +2252,12 @@ app.delete("/api/schools/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), as
 app.get(
   "/api/schools/:id/schedule",
   authenticate,
-  requireAnyPermission(["menus.config", "menus.dashboard"]),
+  requireAnyPermission([
+    "menus.config",
+    "features.dashboard_schedule_interface",
+    "features.dashboard_last_signal",
+    "features.dashboard_next_signal",
+  ]),
   requireSchoolScope({ paramName: "id" }),
   async (req, res) => {
     try {
@@ -1862,6 +2297,41 @@ app.put(
         return res.status(404).json({ error: "school_not_found" });
       }
 
+      if (req.user.role !== ROLE_SUPERADMIN) {
+        const requestRow = await upsertPendingScheduleChangeRequest(
+          client,
+          req.targetSchoolId,
+          req.user.id || null,
+          schedule
+        );
+
+        await client.query("COMMIT");
+
+        const meta = getRequestMeta(req);
+        await writeAuditLog({
+          userId: req.user.id || null,
+          schoolId: req.targetSchoolId,
+          action: "propose_schedule_change",
+          resource: "schedule_change_request",
+          resourceId: String(requestRow.id),
+          afterData: {
+            status: requestRow.status,
+            payloadSummary: summarizeSchedule(schedule),
+          },
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+
+        return res.status(202).json({
+          pendingApproval: true,
+          request: mapScheduleChangeRequest({
+            ...requestRow,
+            school_name: school.name,
+            proposed_by_name: req.user.name || req.user.email || null,
+          }),
+        });
+      }
+
       const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
       await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
 
@@ -1884,9 +2354,247 @@ app.put(
     } catch (error) {
       await client.query("ROLLBACK");
       console.error("PUT /api/schools/:id/schedule error:", error);
-      sendInternalError(res, "failed_to_save_schedule", error);
+      return sendInternalError(res, "failed_to_save_schedule", error);
     } finally {
       client.release();
+    }
+  }
+);
+
+app.get(
+  "/api/schools/:id/change-requests",
+  authenticate,
+  requirePermission("menus.config"),
+  requireSchoolScope({ paramName: "id" }),
+  async (req, res) => {
+    const statusFilter = String(req.query.status || "").trim();
+    const allowedStatuses = ["pending", "approved", "rejected", "cancelled"];
+    if (statusFilter && !allowedStatuses.includes(statusFilter)) {
+      return res.status(400).json({ error: "invalid_change_request_status" });
+    }
+
+    const limitRaw = Number.parseInt(String(req.query.limit || "30"), 10);
+    const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 30;
+
+    try {
+      const values = [req.targetSchoolId];
+      const where = ["scr.school_id = $1"];
+
+      if (statusFilter) {
+        values.push(statusFilter);
+        where.push(`scr.status = $${values.length}`);
+      }
+
+      values.push(limit);
+      const result = await pool.query(
+        `
+        SELECT scr.id, scr.school_id, scr.proposed_by, scr.payload, scr.before_payload, scr.status, scr.review_note,
+               scr.reviewed_by, scr.reviewed_at, scr.created_at, scr.updated_at,
+               s.name AS school_name,
+               pu.name AS proposed_by_name,
+               ru.name AS reviewed_by_name
+        FROM schedule_change_requests scr
+        LEFT JOIN schools s ON s.id = scr.school_id
+        LEFT JOIN users pu ON pu.id = scr.proposed_by
+        LEFT JOIN users ru ON ru.id = scr.reviewed_by
+        WHERE ${where.join(" AND ")}
+        ORDER BY scr.created_at DESC
+        LIMIT $${values.length}
+        `,
+        values
+      );
+
+      return res.json(result.rows.map((row) => mapScheduleChangeRequest(row)));
+    } catch (error) {
+      console.error("GET /api/schools/:id/change-requests error:", error);
+      return sendInternalError(res, "failed_to_list_change_requests", error);
+    }
+  }
+);
+
+app.post(
+  "/api/change-requests/:id/approve",
+  authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_approve_changes"),
+  requireRoles([ROLE_SUPERADMIN]),
+  requireWriteAccess,
+  async (req, res) => {
+    const requestId = toIntId(req.params.id);
+    if (!requestId) return res.status(400).json({ error: "invalid_change_request_id" });
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const requestResult = await client.query(
+        `
+        SELECT scr.id, scr.school_id, scr.proposed_by, scr.payload, scr.before_payload, scr.status, scr.review_note,
+               scr.reviewed_by, scr.reviewed_at, scr.created_at, scr.updated_at,
+               s.name AS school_name,
+               pu.name AS proposed_by_name,
+               ru.name AS reviewed_by_name
+        FROM schedule_change_requests scr
+        LEFT JOIN schools s ON s.id = scr.school_id
+        LEFT JOIN users pu ON pu.id = scr.proposed_by
+        LEFT JOIN users ru ON ru.id = scr.reviewed_by
+        WHERE scr.id = $1
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [requestId]
+      );
+
+      if (!requestResult.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "change_request_not_found" });
+      }
+
+      const requestRow = requestResult.rows[0];
+      if (requestRow.status !== "pending") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "change_request_not_pending" });
+      }
+
+      const schedule = normalizeSchedulePayload(requestRow.payload);
+      const beforeSchedule = await getScheduleObjectBySchoolId(client, requestRow.school_id);
+      await replaceSchoolSchedule(client, requestRow.school_id, schedule);
+
+      const updateResult = await client.query(
+        `
+        UPDATE schedule_change_requests
+        SET status = 'approved',
+            reviewed_by = $1,
+            reviewed_at = NOW(),
+            review_note = $2,
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING id, school_id, proposed_by, payload, before_payload, status, review_note, reviewed_by, reviewed_at, created_at, updated_at
+        `,
+        [req.user.id, String(req.body?.note || "").trim() || null, requestId]
+      );
+
+      await client.query("COMMIT");
+
+      const approvedRow = {
+        ...updateResult.rows[0],
+        school_name: requestRow.school_name,
+        proposed_by_name: requestRow.proposed_by_name,
+        reviewed_by_name: req.user.name || req.user.email || null,
+      };
+      const mapped = mapScheduleChangeRequest(approvedRow);
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: requestRow.school_id,
+        action: "approve_schedule_change",
+        resource: "schedule_change_request",
+        resourceId: String(requestId),
+        beforeData: beforeSchedule,
+        afterData: schedule,
+        meta: {
+          payloadSummary: summarizeSchedule(schedule),
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      return res.json({
+        success: true,
+        request: mapped,
+        schedule,
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("POST /api/change-requests/:id/approve error:", error);
+      return sendInternalError(res, "failed_to_approve_change_request", error);
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.post(
+  "/api/change-requests/:id/reject",
+  authenticate,
+  requirePermission("menus.config"),
+  requirePermission("features.config_approve_changes"),
+  requireRoles([ROLE_SUPERADMIN]),
+  requireWriteAccess,
+  async (req, res) => {
+    const requestId = toIntId(req.params.id);
+    if (!requestId) return res.status(400).json({ error: "invalid_change_request_id" });
+
+    try {
+      const requestResult = await pool.query(
+        `
+        SELECT scr.id, scr.school_id, scr.proposed_by, scr.payload, scr.before_payload, scr.status, scr.review_note,
+               scr.reviewed_by, scr.reviewed_at, scr.created_at, scr.updated_at,
+               s.name AS school_name,
+               pu.name AS proposed_by_name,
+               ru.name AS reviewed_by_name
+        FROM schedule_change_requests scr
+        LEFT JOIN schools s ON s.id = scr.school_id
+        LEFT JOIN users pu ON pu.id = scr.proposed_by
+        LEFT JOIN users ru ON ru.id = scr.reviewed_by
+        WHERE scr.id = $1
+          AND scr.status = 'pending'
+        LIMIT 1
+        `,
+        [requestId]
+      );
+
+      if (!requestResult.rowCount) {
+        return res.status(404).json({ error: "change_request_not_found_or_not_pending" });
+      }
+
+      const note = String(req.body?.note || "").trim() || null;
+      const updateResult = await pool.query(
+        `
+        UPDATE schedule_change_requests
+        SET status = 'rejected',
+            reviewed_by = $1,
+            reviewed_at = NOW(),
+            review_note = $2,
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING id, school_id, proposed_by, payload, before_payload, status, review_note, reviewed_by, reviewed_at, created_at, updated_at
+        `,
+        [req.user.id, note, requestId]
+      );
+
+      const rejectedRow = {
+        ...updateResult.rows[0],
+        school_name: requestResult.rows[0].school_name,
+        proposed_by_name: requestResult.rows[0].proposed_by_name,
+        reviewed_by_name: req.user.name || req.user.email || null,
+      };
+      const mapped = mapScheduleChangeRequest(rejectedRow);
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: mapped.schoolId,
+        action: "reject_schedule_change",
+        resource: "schedule_change_request",
+        resourceId: String(requestId),
+        afterData: {
+          status: "rejected",
+          note,
+          payloadSummary: mapped.payloadSummary,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      return res.json({
+        success: true,
+        request: mapped,
+      });
+    } catch (error) {
+      console.error("POST /api/change-requests/:id/reject error:", error);
+      return sendInternalError(res, "failed_to_reject_change_request", error);
     }
   }
 );
@@ -2062,6 +2770,42 @@ app.post(
     }
 
     const payload = normalizeSchedulePayload(template.payload);
+    if (req.user.role !== ROLE_SUPERADMIN) {
+      const requestRow = await upsertPendingScheduleChangeRequest(
+        client,
+        targetSchoolId,
+        req.user.id || null,
+        payload
+      );
+      await client.query("COMMIT");
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id || null,
+        schoolId: targetSchoolId,
+        action: "propose_template_clone_to_school",
+        resource: "schedule_change_request",
+        resourceId: String(requestRow.id),
+        afterData: {
+          templateId: template.id,
+          payloadSummary: summarizeSchedule(payload),
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      return res.status(202).json({
+        pendingApproval: true,
+        templateId: template.id,
+        targetSchoolId,
+        request: mapScheduleChangeRequest({
+          ...requestRow,
+          school_name: targetSchool.name,
+          proposed_by_name: req.user.name || req.user.email || null,
+        }),
+      });
+    }
+
     const beforeSchedule = await getScheduleObjectBySchoolId(client, targetSchoolId);
     await replaceSchoolSchedule(client, targetSchoolId, payload);
     await client.query("COMMIT");
@@ -2261,6 +3005,39 @@ app.post(
         return res.status(404).json({ error: "school_not_found" });
       }
 
+      if (req.user.role !== ROLE_SUPERADMIN) {
+        const requestRow = await upsertPendingScheduleChangeRequest(
+          client,
+          req.targetSchoolId,
+          req.user.id || null,
+          schedule
+        );
+        await client.query("COMMIT");
+
+        const meta = getRequestMeta(req);
+        await writeAuditLog({
+          userId: req.user.id || null,
+          schoolId: req.targetSchoolId,
+          action: "propose_restore_backup",
+          resource: "schedule_change_request",
+          resourceId: String(requestRow.id),
+          afterData: {
+            payloadSummary: summarizeSchedule(schedule),
+          },
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+
+        return res.status(202).json({
+          pendingApproval: true,
+          request: mapScheduleChangeRequest({
+            ...requestRow,
+            school_name: school.name,
+            proposed_by_name: req.user.name || req.user.email || null,
+          }),
+        });
+      }
+
       const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
       await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
       await client.query("COMMIT");
@@ -2321,6 +3098,42 @@ app.post(
 
       const backup = backupResult.rows[0];
       const schedule = normalizeSchedulePayload(backup.schedule);
+
+      if (req.user.role !== ROLE_SUPERADMIN) {
+        const school = await getSchoolById(client, req.targetSchoolId);
+        const requestRow = await upsertPendingScheduleChangeRequest(
+          client,
+          req.targetSchoolId,
+          req.user.id || null,
+          schedule
+        );
+        await client.query("COMMIT");
+
+        const meta = getRequestMeta(req);
+        await writeAuditLog({
+          userId: req.user.id || null,
+          schoolId: req.targetSchoolId,
+          action: "propose_restore_backup_snapshot",
+          resource: "schedule_change_request",
+          resourceId: String(requestRow.id),
+          afterData: {
+            backupId,
+            payloadSummary: summarizeSchedule(schedule),
+          },
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+
+        return res.status(202).json({
+          pendingApproval: true,
+          request: mapScheduleChangeRequest({
+            ...requestRow,
+            school_name: school?.name || null,
+            proposed_by_name: req.user.name || req.user.email || null,
+          }),
+        });
+      }
+
       const beforeSchedule = await getScheduleObjectBySchoolId(client, req.targetSchoolId);
       await replaceSchoolSchedule(client, req.targetSchoolId, schedule);
       await client.query("COMMIT");
@@ -2637,6 +3450,7 @@ app.get(
     const dbStart = Date.now();
     await pool.query("SELECT 1");
     const dbLatencyMs = Date.now() - dbStart;
+    const uptimeSeconds = Math.max(0, Math.floor((Date.now() - SERVER_STARTED_AT.getTime()) / 1000));
 
     if (req.user.role === ROLE_SUPERADMIN) {
       const sweep = await runMonitoringSweep("manual", req.user.id);
@@ -2654,6 +3468,106 @@ app.get(
         "SELECT COUNT(*)::int AS total FROM schools WHERE active = TRUE"
       );
       const users = await pool.query("SELECT COUNT(*)::int AS total FROM users WHERE active = TRUE");
+      const pendingApprovals = await pool.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM schedule_change_requests
+        WHERE status = 'pending'
+        `
+      );
+      const playbackFailures = await pool.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM alerts
+        WHERE type = 'playback_error'
+          AND created_at >= NOW() - INTERVAL '24 hours'
+        `
+      );
+      const schoolsStatusResult = await pool.query(
+        `
+        SELECT s.id,
+               s.name,
+               COUNT(sc.id)::int AS schedule_count,
+               COALESCE(oa.total, 0)::int AS open_alerts,
+               COALESCE(pr.total, 0)::int AS pending_requests,
+               COALESCE(pf.total, 0)::int AS playback_failures_24h
+        FROM schools s
+        LEFT JOIN schedules sc ON sc.school_id = s.id
+        LEFT JOIN (
+          SELECT school_id, COUNT(*)::int AS total
+          FROM alerts
+          WHERE status = 'open'
+          GROUP BY school_id
+        ) oa ON oa.school_id = s.id
+        LEFT JOIN (
+          SELECT school_id, COUNT(*)::int AS total
+          FROM schedule_change_requests
+          WHERE status = 'pending'
+          GROUP BY school_id
+        ) pr ON pr.school_id = s.id
+        LEFT JOIN (
+          SELECT school_id, COUNT(*)::int AS total
+          FROM alerts
+          WHERE type = 'playback_error'
+            AND created_at >= NOW() - INTERVAL '24 hours'
+          GROUP BY school_id
+        ) pf ON pf.school_id = s.id
+        WHERE s.active = TRUE
+        GROUP BY s.id, s.name, oa.total, pr.total, pf.total
+        ORDER BY s.name ASC
+        `
+      );
+
+      const openAlertsBySeverity = openAlerts.rows.reduce((acc, row) => {
+        acc[row.severity] = Number(row.total) || 0;
+        return acc;
+      }, {});
+      const openAlertsTotal = Object.values(openAlertsBySeverity).reduce(
+        (sum, value) => sum + (Number(value) || 0),
+        0
+      );
+      const schoolsStatus = schoolsStatusResult.rows.map((row) => ({
+        schoolId: row.id,
+        schoolName: row.name,
+        hasSchedule: row.schedule_count > 0,
+        scheduleCount: row.schedule_count,
+        openAlerts: row.open_alerts,
+        pendingApprovals: row.pending_requests,
+        playbackFailuresLast24h: row.playback_failures_24h,
+      }));
+
+      const metricDate = new Date().toISOString().slice(0, 10);
+      const metricsClient = await pool.connect();
+      try {
+        await metricsClient.query("BEGIN");
+        await recordOperationalMetricSample(metricsClient, {
+          metricDate,
+          schoolId: null,
+          dbLatencyMs,
+          openAlerts: openAlertsTotal,
+          playbackFailures: playbackFailures.rows[0]?.total || 0,
+          pendingApprovals: pendingApprovals.rows[0]?.total || 0,
+          schoolsWithoutSchedule: sweep.schoolsWithoutSchedule,
+        });
+
+        for (const schoolStatus of schoolsStatus) {
+          await recordOperationalMetricSample(metricsClient, {
+            metricDate,
+            schoolId: schoolStatus.schoolId,
+            dbLatencyMs,
+            openAlerts: schoolStatus.openAlerts,
+            playbackFailures: schoolStatus.playbackFailuresLast24h,
+            pendingApprovals: schoolStatus.pendingApprovals,
+            schoolsWithoutSchedule: schoolStatus.hasSchedule ? 0 : 1,
+          });
+        }
+        await metricsClient.query("COMMIT");
+      } catch (metricsError) {
+        await metricsClient.query("ROLLBACK");
+        console.error("Operational metrics snapshot error (global):", metricsError);
+      } finally {
+        metricsClient.release();
+      }
 
       return res.json({
         apiOnline: true,
@@ -2667,10 +3581,19 @@ app.get(
           status: "up",
           latencyMs: dbLatencyMs,
         },
-        openAlertsBySeverity: openAlerts.rows.reduce((acc, row) => {
-          acc[row.severity] = row.total;
-          return acc;
-        }, {}),
+        runtime: {
+          startedAt: SERVER_STARTED_AT.toISOString(),
+          uptimeSeconds,
+          lastMonitoringSweepAt: runtimeStats.lastMonitoringSweepAt,
+          lastDailyBackupSweepAt: runtimeStats.lastDailyBackupSweepAt,
+          lastMonitoringSweepResult: runtimeStats.lastMonitoringSweepResult,
+          lastDailyBackupSweepResult: runtimeStats.lastDailyBackupSweepResult,
+        },
+        openAlertsTotal,
+        playbackFailuresLast24h: playbackFailures.rows[0]?.total || 0,
+        pendingApprovals: pendingApprovals.rows[0]?.total || 0,
+        schoolsStatus,
+        openAlertsBySeverity,
       });
     }
 
@@ -2726,6 +3649,48 @@ app.get(
         `,
         [schoolId]
       );
+      const pendingApprovals = await client.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM schedule_change_requests
+        WHERE school_id = $1
+          AND status = 'pending'
+        `,
+        [schoolId]
+      );
+      const playbackFailures = await client.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM alerts
+        WHERE school_id = $1
+          AND type = 'playback_error'
+          AND created_at >= NOW() - INTERVAL '24 hours'
+        `,
+        [schoolId]
+      );
+
+      const openAlertsBySeverity = openAlerts.rows.reduce((acc, row) => {
+        acc[row.severity] = Number(row.total) || 0;
+        return acc;
+      }, {});
+      const openAlertsTotal = Object.values(openAlertsBySeverity).reduce(
+        (sum, value) => sum + (Number(value) || 0),
+        0
+      );
+
+      try {
+        await recordOperationalMetricSample(client, {
+          metricDate: new Date().toISOString().slice(0, 10),
+          schoolId,
+          dbLatencyMs,
+          openAlerts: openAlertsTotal,
+          playbackFailures: playbackFailures.rows[0]?.total || 0,
+          pendingApprovals: pendingApprovals.rows[0]?.total || 0,
+          schoolsWithoutSchedule: school.schedule_count === 0 ? 1 : 0,
+        });
+      } catch (metricsError) {
+        console.error("Operational metrics snapshot error (school):", metricsError);
+      }
 
       res.json({
         apiOnline: true,
@@ -2739,10 +3704,18 @@ app.get(
           status: "up",
           latencyMs: dbLatencyMs,
         },
-        openAlertsBySeverity: openAlerts.rows.reduce((acc, row) => {
-          acc[row.severity] = row.total;
-          return acc;
-        }, {}),
+        runtime: {
+          startedAt: SERVER_STARTED_AT.toISOString(),
+          uptimeSeconds,
+          lastMonitoringSweepAt: runtimeStats.lastMonitoringSweepAt,
+          lastDailyBackupSweepAt: runtimeStats.lastDailyBackupSweepAt,
+          lastMonitoringSweepResult: runtimeStats.lastMonitoringSweepResult,
+          lastDailyBackupSweepResult: runtimeStats.lastDailyBackupSweepResult,
+        },
+        openAlertsTotal,
+        playbackFailuresLast24h: playbackFailures.rows[0]?.total || 0,
+        pendingApprovals: pendingApprovals.rows[0]?.total || 0,
+        openAlertsBySeverity,
       });
     } finally {
       client.release();
@@ -2751,6 +3724,80 @@ app.get(
     console.error("GET /api/monitor/status error:", error);
     sendInternalError(res, "failed_to_get_monitor_status", error);
   }
+  }
+);
+
+app.get(
+  "/api/monitor/history",
+  authenticate,
+  requirePermission("menus.dashboard"),
+  requirePermission("features.dashboard_operational_history"),
+  async (req, res) => {
+    const daysRaw = Number.parseInt(String(req.query.days || "14"), 10);
+    const days = Number.isInteger(daysRaw) ? Math.min(Math.max(daysRaw, 3), 90) : 14;
+    const requestedSchoolId = req.query.schoolId ? toIntId(req.query.schoolId) : null;
+
+    let targetSchoolId = null;
+    if (req.user.role !== ROLE_SUPERADMIN) {
+      targetSchoolId = toIntId(req.user.schoolId);
+      if (!targetSchoolId) {
+        return res.status(400).json({ error: "school_scope_not_found" });
+      }
+    } else if (requestedSchoolId) {
+      targetSchoolId = requestedSchoolId;
+      const school = await getSchoolById(pool, targetSchoolId);
+      if (!school) return res.status(404).json({ error: "school_not_found" });
+    }
+
+    if (targetSchoolId && !canAccessSchool(req.user, targetSchoolId)) {
+      return res.status(403).json({ error: "school_access_denied" });
+    }
+
+    try {
+      const values = [days];
+      const where = ["metric_date >= CURRENT_DATE - (($1::int) - 1) * INTERVAL '1 day'"];
+
+      if (targetSchoolId) {
+        values.push(targetSchoolId);
+        where.push(`school_id = $${values.length}`);
+      } else {
+        where.push("school_id IS NULL");
+      }
+
+      const result = await pool.query(
+        `
+        SELECT metric_date, school_id, db_latency_avg_ms, db_latency_max_ms,
+               open_alerts, playback_failures, pending_approvals, schools_without_schedule, samples, updated_at
+        FROM operational_daily_metrics
+        WHERE ${where.join(" AND ")}
+        ORDER BY metric_date ASC
+        `,
+        values
+      );
+
+      return res.json({
+        scope: targetSchoolId ? "school" : "global",
+        schoolId: targetSchoolId,
+        days,
+        series: result.rows.map((row) => ({
+          date: row.metric_date,
+          schoolId: row.school_id,
+          dbLatencyAvgMs:
+            row.db_latency_avg_ms === null ? null : Number.parseFloat(row.db_latency_avg_ms),
+          dbLatencyMaxMs:
+            row.db_latency_max_ms === null ? null : Number.parseFloat(row.db_latency_max_ms),
+          openAlerts: Number(row.open_alerts) || 0,
+          playbackFailures: Number(row.playback_failures) || 0,
+          pendingApprovals: Number(row.pending_approvals) || 0,
+          schoolsWithoutSchedule: Number(row.schools_without_schedule) || 0,
+          samples: Number(row.samples) || 0,
+          updatedAt: row.updated_at,
+        })),
+      });
+    } catch (error) {
+      console.error("GET /api/monitor/history error:", error);
+      return sendInternalError(res, "failed_to_get_monitor_history", error);
+    }
   }
 );
 

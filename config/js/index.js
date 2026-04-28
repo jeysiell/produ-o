@@ -56,21 +56,37 @@ function getAuthUser() {
 }
 
 function applyDashboardPermissions(user) {
+  const hasDashboardFeature = (featureKey) => {
+    if (!user) return false;
+    const effective = user.effectivePermissions;
+    if (!effective || typeof effective !== "object") return false;
+    if (!effective?.menus?.dashboard) return false;
+    return Boolean(effective?.features?.[featureKey]);
+  };
+
+  const canSeeManualSection = hasDashboardFeature("dashboard_manual_section");
+  const canPlayManual = canSeeManualSection && hasDashboardFeature("dashboard_manual_play");
+  const canSeeLastSignal = hasDashboardFeature("dashboard_last_signal");
+  const canSeeNextSignal = hasDashboardFeature("dashboard_next_signal");
+  const canSeeScheduleInterface = hasDashboardFeature("dashboard_schedule_interface");
+
+  const toggleSection = (elementId, shouldShow) => {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.toggle("hidden", !shouldShow);
+  };
+
+  toggleSection("dashboardManualCard", canSeeManualSection);
+  toggleSection("dashboardLastSignalCard", canSeeLastSignal);
+  toggleSection("dashboardNextSignalCard", canSeeNextSignal);
+  toggleSection("dashboardScheduleSectionCard", canSeeScheduleInterface);
+
   const manualBtn = document.getElementById("btnManualPlay");
   if (!manualBtn) return;
 
-  const hasManualPermission = (() => {
-    if (!user) return false;
-    const effective = user.effectivePermissions;
-    if (effective && typeof effective === "object") {
-      return Boolean(effective?.menus?.dashboard) && Boolean(effective?.features?.dashboard_manual_play);
-    }
-    return false;
-  })();
-
-  manualBtn.disabled = !hasManualPermission;
-  manualBtn.classList.toggle("opacity-50", !hasManualPermission);
-  manualBtn.classList.toggle("cursor-not-allowed", !hasManualPermission);
+  manualBtn.disabled = !canPlayManual;
+  manualBtn.classList.toggle("opacity-50", !canPlayManual);
+  manualBtn.classList.toggle("cursor-not-allowed", !canPlayManual);
 }
 
 function clearTimers() {
@@ -500,6 +516,7 @@ async function wakeUpAPI() {
 document
   .getElementById("btnManualPlay")
   ?.addEventListener("click", function manualPlayHandler() {
+    if (this.disabled) return;
     const music = document.getElementById("manualMusic")?.value || "musica1.mp3";
     const duration = parseInt(document.getElementById("manualDuration")?.value, 10) || 12;
     const btn = this;

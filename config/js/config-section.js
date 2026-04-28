@@ -4,6 +4,8 @@
   const CURRENT_SCHOOL_STORAGE_KEY = "currentSchoolId";
   const AUTH_TOKEN_STORAGE_KEY = "authToken";
   const AUTH_USER_STORAGE_KEY = "authUser";
+  const SIMULATION_SOURCE_TOKEN_KEY = "simulationSourceToken";
+  const SIMULATION_SOURCE_USER_KEY = "simulationSourceUser";
 
   const ROLE_SUPERADMIN = "superadmin";
   const ROLE_ADMIN_ESCOLA = "admin_escola";
@@ -11,12 +13,18 @@
   const PERMISSION_KEYS = {
     menus: ["dashboard", "config", "schools", "users", "audit"],
     features: [
+      "dashboard_manual_section",
       "dashboard_manual_play",
+      "dashboard_last_signal",
+      "dashboard_next_signal",
+      "dashboard_schedule_interface",
       "dashboard_database_status",
       "dashboard_open_alerts",
       "dashboard_schools_without_schedule",
       "dashboard_monitor_alerts",
+      "dashboard_operational_history",
       "config_schedule_write",
+      "config_approve_changes",
       "config_templates",
       "config_backup_export",
       "config_backup_import",
@@ -36,14 +44,20 @@
         schools: true,
         users: true,
         audit: true,
-    },
-    features: {
-      dashboard_manual_play: false,
-      dashboard_database_status: true,
-      dashboard_open_alerts: true,
-      dashboard_schools_without_schedule: true,
-      dashboard_monitor_alerts: true,
+      },
+      features: {
+        dashboard_manual_section: true,
+        dashboard_manual_play: false,
+        dashboard_last_signal: true,
+        dashboard_next_signal: true,
+        dashboard_schedule_interface: true,
+        dashboard_database_status: true,
+        dashboard_open_alerts: true,
+        dashboard_schools_without_schedule: true,
+        dashboard_monitor_alerts: true,
+        dashboard_operational_history: true,
         config_schedule_write: true,
+        config_approve_changes: true,
         config_templates: true,
         config_backup_export: true,
         config_backup_import: true,
@@ -64,12 +78,18 @@
         audit: true,
       },
       features: {
+        dashboard_manual_section: true,
         dashboard_manual_play: true,
+        dashboard_last_signal: true,
+        dashboard_next_signal: true,
+        dashboard_schedule_interface: true,
         dashboard_database_status: true,
         dashboard_open_alerts: true,
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
+        dashboard_operational_history: false,
         config_schedule_write: true,
+        config_approve_changes: false,
         config_templates: true,
         config_backup_export: true,
         config_backup_import: true,
@@ -90,12 +110,18 @@
         audit: true,
       },
       features: {
+        dashboard_manual_section: true,
         dashboard_manual_play: true,
+        dashboard_last_signal: true,
+        dashboard_next_signal: true,
+        dashboard_schedule_interface: true,
         dashboard_database_status: true,
         dashboard_open_alerts: true,
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
+        dashboard_operational_history: false,
         config_schedule_write: false,
+        config_approve_changes: false,
         config_templates: false,
         config_backup_export: true,
         config_backup_import: false,
@@ -117,12 +143,18 @@
       audit: "Menu Auditoria",
     },
     features: {
+      dashboard_manual_section: "Dashboard: visualizar acionamento manual",
       dashboard_manual_play: "Dashboard: tocar audio manual",
+      dashboard_last_signal: "Dashboard: visualizar ultimo sinal",
+      dashboard_next_signal: "Dashboard: visualizar proximo sinal",
+      dashboard_schedule_interface: "Dashboard: visualizar interface de horarios",
       dashboard_database_status: "Dashboard: status do banco de dados",
       dashboard_open_alerts: "Dashboard: total de alertas",
       dashboard_schools_without_schedule: "Dashboard: escolas sem horario",
       dashboard_monitor_alerts: "Dashboard: lista de alertas de monitoramento",
+      dashboard_operational_history: "Dashboard: grafico operacional",
       config_schedule_write: "Config: editar horarios",
+      config_approve_changes: "Config: aprovar mudancas de horario",
       config_templates: "Config: templates",
       config_backup_export: "Config: exportar backup",
       config_backup_import: "Config: importar backup",
@@ -138,17 +170,23 @@
     {
       menu: "dashboard",
       features: [
+        "dashboard_manual_section",
         "dashboard_manual_play",
+        "dashboard_last_signal",
+        "dashboard_next_signal",
+        "dashboard_schedule_interface",
         "dashboard_database_status",
         "dashboard_open_alerts",
         "dashboard_schools_without_schedule",
         "dashboard_monitor_alerts",
+        "dashboard_operational_history",
       ],
     },
     {
       menu: "config",
       features: [
         "config_schedule_write",
+        "config_approve_changes",
         "config_templates",
         "config_backup_export",
         "config_backup_import",
@@ -162,6 +200,116 @@
     },
     { menu: "audit", features: ["audit_view"] },
   ];
+  const USER_PERMISSION_PRESETS = {
+    coordenacao: {
+      label: "Coordenacao",
+      role: ROLE_ADMIN_ESCOLA,
+      permissions: {
+        menus: {
+          dashboard: true,
+          config: true,
+          schools: false,
+          users: false,
+          audit: true,
+        },
+        features: {
+          dashboard_manual_section: true,
+          dashboard_manual_play: false,
+          dashboard_last_signal: true,
+          dashboard_next_signal: true,
+          dashboard_schedule_interface: true,
+          dashboard_database_status: true,
+          dashboard_open_alerts: true,
+          dashboard_schools_without_schedule: true,
+          dashboard_monitor_alerts: true,
+          dashboard_operational_history: false,
+          config_schedule_write: true,
+          config_approve_changes: false,
+          config_templates: true,
+          config_backup_export: true,
+          config_backup_import: false,
+          config_backup_restore: false,
+          users_create: false,
+          users_edit: false,
+          users_disable: false,
+          users_reset_password: false,
+          audit_view: true,
+        },
+      },
+    },
+    portaria: {
+      label: "Portaria",
+      role: ROLE_SOMENTE_LEITURA,
+      permissions: {
+        menus: {
+          dashboard: true,
+          config: false,
+          schools: false,
+          users: false,
+          audit: false,
+        },
+        features: {
+          dashboard_manual_section: true,
+          dashboard_manual_play: true,
+          dashboard_last_signal: true,
+          dashboard_next_signal: true,
+          dashboard_schedule_interface: true,
+          dashboard_database_status: true,
+          dashboard_open_alerts: true,
+          dashboard_schools_without_schedule: true,
+          dashboard_monitor_alerts: true,
+          dashboard_operational_history: false,
+          config_schedule_write: false,
+          config_approve_changes: false,
+          config_templates: false,
+          config_backup_export: false,
+          config_backup_import: false,
+          config_backup_restore: false,
+          users_create: false,
+          users_edit: false,
+          users_disable: false,
+          users_reset_password: false,
+          audit_view: false,
+        },
+      },
+    },
+    secretaria: {
+      label: "Secretaria",
+      role: ROLE_ADMIN_ESCOLA,
+      permissions: {
+        menus: {
+          dashboard: true,
+          config: true,
+          schools: false,
+          users: false,
+          audit: true,
+        },
+        features: {
+          dashboard_manual_section: false,
+          dashboard_manual_play: false,
+          dashboard_last_signal: true,
+          dashboard_next_signal: true,
+          dashboard_schedule_interface: true,
+          dashboard_database_status: true,
+          dashboard_open_alerts: true,
+          dashboard_schools_without_schedule: true,
+          dashboard_monitor_alerts: true,
+          dashboard_operational_history: false,
+          config_schedule_write: true,
+          config_approve_changes: false,
+          config_templates: false,
+          config_backup_export: true,
+          config_backup_import: true,
+          config_backup_restore: false,
+          users_create: false,
+          users_edit: false,
+          users_disable: false,
+          users_reset_password: false,
+          audit_view: true,
+        },
+      },
+    },
+  };
 
   const musicLabels = {
     "musica1.mp3": "Tu me Sondas",
@@ -185,6 +333,10 @@
   const pageEyebrow = document.getElementById("pageEyebrow");
   const pageTitle = document.getElementById("pageTitle");
   const sidebar = document.getElementById("sidebar");
+  const dashboardManualCard = document.getElementById("dashboardManualCard");
+  const dashboardLastSignalCard = document.getElementById("dashboardLastSignalCard");
+  const dashboardNextSignalCard = document.getElementById("dashboardNextSignalCard");
+  const dashboardScheduleSectionCard = document.getElementById("dashboardScheduleSectionCard");
   const dashboardDatabaseCard = document.getElementById("dashboardDatabaseCard");
   const dashboardOpenAlertsCard = document.getElementById("dashboardOpenAlertsCard");
   const dashboardSchoolsWithoutScheduleCard = document.getElementById("dashboardSchoolsWithoutScheduleCard");
@@ -196,6 +348,16 @@
   const dashboardMonitorCheckedAt = document.getElementById("dashboardMonitorCheckedAt");
   const dashboardAlertList = document.getElementById("dashboardAlertList");
   const refreshDashboardMonitorBtn = document.getElementById("refreshDashboardMonitorBtn");
+  const dashboardManualPlayBtn = document.getElementById("btnManualPlay");
+  const dashboardApiUptime = document.getElementById("dashboardApiUptime");
+  const dashboardLastSweeps = document.getElementById("dashboardLastSweeps");
+  const dashboardPlaybackFailures = document.getElementById("dashboardPlaybackFailures");
+  const dashboardPendingApprovals = document.getElementById("dashboardPendingApprovals");
+  const dashboardOperationalHistoryCard = document.getElementById("dashboardOperationalHistoryCard");
+  const dashboardOperationalSchoolFilter = document.getElementById("dashboardOperationalSchoolFilter");
+  const dashboardOperationalDays = document.getElementById("dashboardOperationalDays");
+  const dashboardOperationalCanvas = document.getElementById("dashboardOperationalCanvas");
+  const dashboardOperationalMeta = document.getElementById("dashboardOperationalMeta");
 
   const dashboardSchoolSelect = document.getElementById("dashboardSchoolSelect");
   const configSchoolSelect = document.getElementById("configSchoolSelect");
@@ -208,6 +370,9 @@
   const refreshBackupsBtn = document.getElementById("refreshBackupsBtn");
   const previewBackupBtn = document.getElementById("previewBackupBtn");
   const restoreBackupBtn = document.getElementById("restoreBackupBtn");
+  const scheduleApprovalSection = document.getElementById("scheduleApprovalSection");
+  const refreshScheduleRequestsBtn = document.getElementById("refreshScheduleRequestsBtn");
+  const scheduleRequestsList = document.getElementById("scheduleRequestsList");
 
   const filterPeriod = document.getElementById("configFilterPeriod");
   const scheduleTable = document.getElementById("configScheduleTable");
@@ -256,6 +421,10 @@
   const userRoleInput = document.getElementById("userRoleInput");
   const userSchoolSelect = document.getElementById("userSchoolSelect");
   const userPermissionsGrid = document.getElementById("userPermissionsGrid");
+  const userPresetSelect = document.getElementById("userPresetSelect");
+  const applyUserPresetBtn = document.getElementById("applyUserPresetBtn");
+  const resetUserOverridesBtn = document.getElementById("resetUserOverridesBtn");
+  const userEffectivePermissionsPanel = document.getElementById("userEffectivePermissionsPanel");
   const userActiveInput = document.getElementById("userActiveInput");
 
   const auditSchoolFilter = document.getElementById("auditSchoolFilter");
@@ -279,6 +448,9 @@
   const authUserIcon = document.getElementById("authUserIcon");
   const changePasswordBtn = document.getElementById("changePasswordBtn");
   const logoutBtn = document.getElementById("logoutBtn");
+  const simulationBanner = document.getElementById("simulationBanner");
+  const simulationText = document.getElementById("simulationText");
+  const exitSimulationBtn = document.getElementById("exitSimulationBtn");
 
   const changePasswordModal = document.getElementById("changePasswordModal");
   const changePasswordModalContent = document.getElementById("changePasswordModalContent");
@@ -308,6 +480,7 @@
   let users = [];
   let auditLogs = [];
   let backupSnapshots = [];
+  let pendingScheduleRequests = [];
   let currentUser = null;
 
   function formatRoleLabel(role) {
@@ -328,7 +501,7 @@
   }
 
   function canWrite() {
-    return Boolean(currentUser) && hasPermission("features.config_schedule_write");
+    return Boolean(currentUser) && !isSimulationActive() && hasPermission("features.config_schedule_write");
   }
 
   function canManageUsers() {
@@ -343,7 +516,12 @@
   }
 
   function canCreateUsers() {
-    return Boolean(currentUser) && hasPermission("menus.users") && hasPermission("features.users_create");
+    return (
+      Boolean(currentUser) &&
+      !isSimulationActive() &&
+      hasPermission("menus.users") &&
+      hasPermission("features.users_create")
+    );
   }
 
   function canViewAuditLogs() {
@@ -359,7 +537,27 @@
   }
 
   function canAccessSchoolsMenu() {
-    return isSuperAdmin() && hasPermission("menus.schools");
+    return isSuperAdmin() && !isSimulationActive() && hasPermission("menus.schools");
+  }
+
+  function canViewDashboardManualSection() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_manual_section");
+  }
+
+  function canPlayDashboardManualAudio() {
+    return canViewDashboardManualSection() && hasPermission("features.dashboard_manual_play");
+  }
+
+  function canViewDashboardLastSignal() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_last_signal");
+  }
+
+  function canViewDashboardNextSignal() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_next_signal");
+  }
+
+  function canViewDashboardScheduleInterface() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_schedule_interface");
   }
 
   function canViewDashboardDatabaseStatus() {
@@ -378,8 +576,12 @@
     return canAccessDashboardMenu() && hasPermission("features.dashboard_monitor_alerts");
   }
 
+  function canViewDashboardOperationalHistory() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_operational_history");
+  }
+
   function canUseTemplates() {
-    return canAccessConfigMenu() && hasPermission("features.config_templates");
+    return canAccessConfigMenu() && !isSimulationActive() && hasPermission("features.config_templates");
   }
 
   function canExportBackup() {
@@ -387,11 +589,11 @@
   }
 
   function canImportBackup() {
-    return canAccessConfigMenu() && hasPermission("features.config_backup_import");
+    return canAccessConfigMenu() && !isSimulationActive() && hasPermission("features.config_backup_import");
   }
 
   function canRestoreBackups() {
-    return canAccessConfigMenu() && hasPermission("features.config_backup_restore");
+    return canAccessConfigMenu() && !isSimulationActive() && hasPermission("features.config_backup_restore");
   }
 
   function buildEmptyPermissions() {
@@ -399,6 +601,10 @@
       menus: Object.fromEntries(PERMISSION_KEYS.menus.map((key) => [key, false])),
       features: Object.fromEntries(PERMISSION_KEYS.features.map((key) => [key, false])),
     };
+  }
+
+  function hasOwn(objectValue, key) {
+    return Object.prototype.hasOwnProperty.call(objectValue || {}, key);
   }
 
   function normalizePermissionsPayload(rawPermissions, options = {}) {
@@ -442,15 +648,19 @@
     const effective = buildEmptyPermissions();
 
     PERMISSION_KEYS.menus.forEach((key) => {
-      const allowedByRole = Boolean(defaults.menus[key]);
-      const explicit = custom.menus[key];
-      effective.menus[key] = allowedByRole ? explicit !== false : false;
+      if (hasOwn(custom.menus, key)) {
+        effective.menus[key] = Boolean(custom.menus[key]);
+        return;
+      }
+      effective.menus[key] = Boolean(defaults.menus[key]);
     });
 
     PERMISSION_KEYS.features.forEach((key) => {
-      const allowedByRole = Boolean(defaults.features[key]);
-      const explicit = custom.features[key];
-      effective.features[key] = allowedByRole ? explicit !== false : false;
+      if (hasOwn(custom.features, key)) {
+        effective.features[key] = Boolean(custom.features[key]);
+        return;
+      }
+      effective.features[key] = Boolean(defaults.features[key]);
     });
 
     return effective;
@@ -487,16 +697,64 @@
     localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user || {}));
   }
 
-  function clearAuthSession() {
+  function clearAuthSession(options = {}) {
+    const preserveSimulationSource = options.preserveSimulationSource === true;
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     localStorage.removeItem(AUTH_USER_STORAGE_KEY);
     localStorage.removeItem(CURRENT_SCHOOL_STORAGE_KEY);
+    if (!preserveSimulationSource) {
+      localStorage.removeItem(SIMULATION_SOURCE_TOKEN_KEY);
+      localStorage.removeItem(SIMULATION_SOURCE_USER_KEY);
+    }
+  }
+
+  function getSimulationSourceSession() {
+    const token = localStorage.getItem(SIMULATION_SOURCE_TOKEN_KEY) || "";
+    if (!token) return null;
+    try {
+      const userRaw = localStorage.getItem(SIMULATION_SOURCE_USER_KEY) || "{}";
+      const user = JSON.parse(userRaw);
+      return { token, user };
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  function setSimulationSourceSession(token, user) {
+    if (!token) return;
+    localStorage.setItem(SIMULATION_SOURCE_TOKEN_KEY, token);
+    localStorage.setItem(SIMULATION_SOURCE_USER_KEY, JSON.stringify(user || {}));
+  }
+
+  function clearSimulationSourceSession() {
+    localStorage.removeItem(SIMULATION_SOURCE_TOKEN_KEY);
+    localStorage.removeItem(SIMULATION_SOURCE_USER_KEY);
+  }
+
+  function isSimulationActive() {
+    return Boolean(currentUser?.simulation?.active);
+  }
+
+  function updateSimulationBanner() {
+    if (!simulationBanner || !simulationText || !exitSimulationBtn) return;
+    if (!isSimulationActive()) {
+      simulationBanner.classList.add("hidden");
+      return;
+    }
+
+    const sim = currentUser.simulation || {};
+    const roleLabel = formatRoleLabel(sim.targetRole || currentUser.role);
+    const schoolLabel = currentUser.schoolName || getSchoolNameById(currentUser.schoolId) || "-";
+    simulationText.textContent = `Modo simulacao ativo: ${roleLabel} - ${schoolLabel}`;
+    simulationBanner.classList.remove("hidden");
   }
 
   function setCurrentUser(user) {
     currentUser = user || null;
     window.currentUser = currentUser;
     updateUserBadge();
+    updateSimulationBanner();
+    syncOperationalHistorySchoolFilter();
     applyPermissions();
   }
 
@@ -521,7 +779,9 @@
     }
 
     authUserName.textContent = currentUser.name || currentUser.email || "Usuario";
-    authUserRole.textContent = formatRoleLabel(currentUser.role);
+    authUserRole.textContent = isSimulationActive()
+      ? `${formatRoleLabel(currentUser.role)} (sim.)`
+      : formatRoleLabel(currentUser.role);
     authUserIcon.className =
       currentUser.role === ROLE_SUPERADMIN
         ? "fas fa-user-shield text-blue-600 dark:text-sky-300"
@@ -610,6 +870,61 @@
     return message;
   }
 
+  async function startSimulationSession(payload) {
+    if (!payload?.token || !payload?.user) {
+      throw new Error("invalid_simulation_payload");
+    }
+
+    const previousSource = getSimulationSourceSession();
+    if (!previousSource && !isSimulationActive()) {
+      const token = getAuthToken();
+      if (token && currentUser) {
+        setSimulationSourceSession(token, currentUser);
+      }
+    }
+
+    setAuthSession(payload.token, payload.user);
+    setCurrentUser(payload.user);
+    hideAuthOverlay();
+
+    const targetSchoolId = payload.user?.schoolId ? String(payload.user.schoolId) : "";
+    await loadSchools();
+    if (targetSchoolId && String(getCurrentSchoolId() || "") !== targetSchoolId) {
+      await setCurrentSchoolId(targetSchoolId, { dispatch: true });
+    }
+    await loadUsers();
+    await loadAuditLogs();
+    await loadDashboardMonitorInfo();
+    await loadConfigSchedule();
+    switchSection("dashboard");
+    broadcastAuthChanged(true);
+  }
+
+  async function exitSimulation() {
+    const source = getSimulationSourceSession();
+    if (!source?.token) {
+      alert("Nao ha simulacao ativa.");
+      return;
+    }
+
+    setAuthSession(source.token, source.user || {});
+    clearSimulationSourceSession();
+
+    const restored = await restoreSession();
+    if (!restored) {
+      alert("Nao foi possivel restaurar a sessao original.");
+      return;
+    }
+
+    await loadSchools();
+    await loadUsers();
+    await loadAuditLogs();
+    await loadDashboardMonitorInfo();
+    await loadConfigSchedule();
+    switchSection("dashboard");
+    broadcastAuthChanged(true);
+  }
+
   function closeSidebarOnMobile() {
     if (window.innerWidth < 768) {
       sidebar?.classList.add("-translate-x-full");
@@ -661,6 +976,7 @@
 
     await loadTemplates();
     await loadBackupSnapshots();
+    await loadScheduleChangeRequests();
     await loadDashboardMonitorInfo();
 
     const configVisible = !configSection?.classList.contains("hidden");
@@ -748,6 +1064,18 @@
     if (navAudits) {
       navAudits.classList.toggle("hidden", !canViewAuditLogs());
     }
+    if (dashboardManualCard) {
+      dashboardManualCard.classList.toggle("hidden", !canViewDashboardManualSection());
+    }
+    if (dashboardLastSignalCard) {
+      dashboardLastSignalCard.classList.toggle("hidden", !canViewDashboardLastSignal());
+    }
+    if (dashboardNextSignalCard) {
+      dashboardNextSignalCard.classList.toggle("hidden", !canViewDashboardNextSignal());
+    }
+    if (dashboardScheduleSectionCard) {
+      dashboardScheduleSectionCard.classList.toggle("hidden", !canViewDashboardScheduleInterface());
+    }
     if (dashboardDatabaseCard) {
       dashboardDatabaseCard.classList.toggle("hidden", !canViewDashboardDatabaseStatus());
     }
@@ -763,6 +1091,9 @@
     if (dashboardMonitorAlertsCard) {
       dashboardMonitorAlertsCard.classList.toggle("hidden", !canViewDashboardMonitorAlerts());
     }
+    if (dashboardOperationalHistoryCard) {
+      dashboardOperationalHistoryCard.classList.toggle("hidden", !canViewDashboardOperationalHistory());
+    }
 
     if (schoolBtn) {
       schoolBtn.disabled = !canAccessSchoolsMenu();
@@ -773,6 +1104,12 @@
       userBtn.disabled = !canCreateUsers();
       userBtn.classList.toggle("opacity-50", !canCreateUsers());
       userBtn.classList.toggle("cursor-not-allowed", !canCreateUsers());
+    }
+    if (dashboardManualPlayBtn) {
+      const canPlayAudio = canPlayDashboardManualAudio();
+      dashboardManualPlayBtn.disabled = !canPlayAudio;
+      dashboardManualPlayBtn.classList.toggle("opacity-50", !canPlayAudio);
+      dashboardManualPlayBtn.classList.toggle("cursor-not-allowed", !canPlayAudio);
     }
 
     const disableWrite = !canWrite();
@@ -788,6 +1125,18 @@
     if (restoreBackupBtn) restoreBackupBtn.disabled = !canRestoreBackups();
     if (previewBackupBtn) previewBackupBtn.disabled = !canExportBackup();
     if (refreshBackupsBtn) refreshBackupsBtn.disabled = !canExportBackup();
+    if (scheduleApprovalSection) {
+      scheduleApprovalSection.classList.toggle("hidden", !canAccessConfigMenu());
+    }
+    if (refreshScheduleRequestsBtn) {
+      refreshScheduleRequestsBtn.disabled = !canAccessConfigMenu();
+    }
+    if (dashboardOperationalSchoolFilter) {
+      dashboardOperationalSchoolFilter.disabled = !canViewDashboardOperationalHistory();
+    }
+    if (dashboardOperationalDays) {
+      dashboardOperationalDays.disabled = !canViewDashboardOperationalHistory();
+    }
   }
 
   function updateConfigClock() {
@@ -919,7 +1268,6 @@
       alert("Esta escola esta inativa. Ative a escola para acessar configuracoes.");
       return;
     }
-
     await setCurrentSchoolId(String(school.id));
     switchSection("config");
   }
@@ -950,6 +1298,42 @@
     select.disabled = activeSchools.length === 0 || !isSuperAdmin();
   }
 
+  function syncOperationalHistorySchoolFilter() {
+    if (!dashboardOperationalSchoolFilter) return;
+
+    const activeSchools = getActiveSchools();
+    const previous = String(dashboardOperationalSchoolFilter.value || "");
+    dashboardOperationalSchoolFilter.innerHTML = "";
+
+    if (isSuperAdmin()) {
+      const globalOption = document.createElement("option");
+      globalOption.value = "";
+      globalOption.textContent = "Visao global";
+      dashboardOperationalSchoolFilter.appendChild(globalOption);
+      activeSchools.forEach((school) => {
+        const option = document.createElement("option");
+        option.value = String(school.id);
+        option.textContent = school.name || "Sem nome";
+        dashboardOperationalSchoolFilter.appendChild(option);
+      });
+      const hasPrevious = Array.from(dashboardOperationalSchoolFilter.options).some(
+        (opt) => opt.value === previous
+      );
+      dashboardOperationalSchoolFilter.value = hasPrevious ? previous : "";
+      dashboardOperationalSchoolFilter.disabled = activeSchools.length === 0;
+      return;
+    }
+
+    const ownSchoolId = String(currentUser?.schoolId || "");
+    const school = activeSchools.find((item) => String(item.id) === ownSchoolId);
+    const option = document.createElement("option");
+    option.value = ownSchoolId;
+    option.textContent = school?.name || "Minha escola";
+    dashboardOperationalSchoolFilter.appendChild(option);
+    dashboardOperationalSchoolFilter.value = ownSchoolId;
+    dashboardOperationalSchoolFilter.disabled = true;
+  }
+
   async function syncSchoolSelectors() {
     const activeSchools = getActiveSchools();
     const current = String(getCurrentSchoolId() || "");
@@ -960,6 +1344,7 @@
 
     buildSchoolOptions(dashboardSchoolSelect, next);
     buildSchoolOptions(configSchoolSelect, next);
+    syncOperationalHistorySchoolFilter();
     await setCurrentSchoolId(next, { dispatch: current !== String(next) });
   }
 
@@ -996,7 +1381,7 @@
         </td>
         <td class="px-4 py-3 text-center">
           <div class="inline-flex items-center gap-3">
-            <button type="button" data-action="redirect" class="text-emerald-600 transition hover:text-emerald-800" title="Acessar escola">
+            <button type="button" data-action="redirect" class="text-emerald-600 transition hover:text-emerald-800" title="Abrir configuracoes da escola">
               <i class="fas fa-arrow-right"></i>
             </button>
             <button type="button" data-action="edit" class="text-blue-600 transition hover:text-blue-800" title="Editar">
@@ -1058,6 +1443,7 @@
       buildAuditSchoolFilter();
       buildSchoolOptions(dashboardSchoolSelect, "");
       buildSchoolOptions(configSchoolSelect, "");
+      syncOperationalHistorySchoolFilter();
       await setCurrentSchoolId("", { dispatch: true });
     }
   }
@@ -1229,6 +1615,49 @@
     userRoleInput.value = allowedValues.includes(selectedRole) ? selectedRole : allowedValues[0];
   }
 
+  function populateUserPresetOptions() {
+    if (!userPresetSelect) return;
+    const current = userPresetSelect.value || "";
+    userPresetSelect.innerHTML = `<option value="">Preset de permissao</option>`;
+    Object.entries(USER_PERMISSION_PRESETS).forEach(([key, preset]) => {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = preset.label;
+      userPresetSelect.appendChild(option);
+    });
+    userPresetSelect.value = current;
+  }
+
+  function applyUserPreset() {
+    if (!userPresetSelect || !userRoleInput) return;
+    const presetKey = userPresetSelect.value;
+    if (!presetKey) {
+      alert("Selecione um preset.");
+      return;
+    }
+
+    const preset = USER_PERMISSION_PRESETS[presetKey];
+    if (!preset) {
+      alert("Preset invalido.");
+      return;
+    }
+
+    const nextRole = preset.role || ROLE_ADMIN_ESCOLA;
+    if (userRoleInput) {
+      userRoleInput.value = nextRole;
+    }
+
+    buildUserPermissionsGrid(nextRole, preset.permissions || {});
+    syncUserSchoolField(userSchoolSelect?.value || "");
+    renderEffectivePermissionsPreview(nextRole);
+  }
+
+  function resetUserOverridesToProfileDefaults() {
+    if (!userRoleInput) return;
+    buildUserPermissionsGrid(userRoleInput.value || ROLE_ADMIN_ESCOLA, {});
+    renderEffectivePermissionsPreview(userRoleInput.value || ROLE_ADMIN_ESCOLA);
+  }
+
   function getManagedSchools() {
     const activeSchools = getActiveSchools();
     if (isSuperAdmin()) return activeSchools;
@@ -1289,61 +1718,84 @@
     const normalizedSelected = normalizePermissionsPayload(selectedPermissions || {});
     userPermissionsGrid.innerHTML = "";
 
-    const selectedMenus = {};
+    const buildPermissionRow = (section, key, labelText, defaultValue, selectedValue) => {
+      const row = document.createElement("div");
+      row.className =
+        "flex flex-col gap-2 rounded-lg border border-slate-200/80 bg-white/70 p-2 dark:border-slate-700/80 dark:bg-slate-900/40 md:flex-row md:items-center md:justify-between";
+
+      const label = document.createElement("span");
+      label.className = "text-xs";
+      label.textContent = labelText;
+
+      const select = document.createElement("select");
+      select.dataset.permMode = "true";
+      select.dataset.section = section;
+      select.dataset.key = key;
+      select.dataset.default = defaultValue ? "true" : "false";
+      select.className =
+        "rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-sky-500 dark:border-slate-700 dark:bg-slate-800";
+
+      const defaultLabel = defaultValue ? "Permitido" : "Bloqueado";
+      const options = [
+        { value: "inherit", text: `Padrao do perfil (${defaultLabel})` },
+        { value: "allow", text: "Permitir" },
+        { value: "deny", text: "Bloquear" },
+      ];
+      options.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.value;
+        option.textContent = item.text;
+        select.appendChild(option);
+      });
+
+      if (selectedValue === true) {
+        select.value = "allow";
+      } else if (selectedValue === false) {
+        select.value = "deny";
+      } else {
+        select.value = "inherit";
+      }
+
+      row.appendChild(label);
+      row.appendChild(select);
+      return row;
+    };
+
     const menuWrapper = document.createElement("div");
     menuWrapper.className =
       "rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900";
-
     const menuTitle = document.createElement("p");
     menuTitle.className =
       "mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
     menuTitle.textContent = "Menus";
     menuWrapper.appendChild(menuTitle);
-
     const menuList = document.createElement("div");
     menuList.className = "space-y-2";
-
     PERMISSION_KEYS.menus.forEach((menuKey) => {
-      const roleAllowsMenu = Boolean(defaultsForRole.menus[menuKey]);
-      const hasCustom = Object.prototype.hasOwnProperty.call(normalizedSelected.menus, menuKey);
-      const checked = roleAllowsMenu && (hasCustom ? normalizedSelected.menus[menuKey] : true);
-      selectedMenus[menuKey] = checked;
-
-      const label = document.createElement("label");
-      label.className = "flex items-center gap-2 text-xs";
-
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.id = `perm_menus_${menuKey}`;
-      input.dataset.section = "menus";
-      input.dataset.key = menuKey;
-      input.dataset.roleAllowed = roleAllowsMenu ? "true" : "false";
-      input.checked = checked;
-      input.disabled = !roleAllowsMenu;
-      input.className =
-        "h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40";
-
-      const span = document.createElement("span");
-      span.textContent = PERMISSION_LABELS.menus[menuKey] || menuKey;
-
-      label.appendChild(input);
-      label.appendChild(span);
-      menuList.appendChild(label);
+      const selectedValue = hasOwn(normalizedSelected.menus, menuKey)
+        ? Boolean(normalizedSelected.menus[menuKey])
+        : null;
+      menuList.appendChild(
+        buildPermissionRow(
+          "menus",
+          menuKey,
+          PERMISSION_LABELS.menus[menuKey] || menuKey,
+          Boolean(defaultsForRole.menus[menuKey]),
+          selectedValue
+        )
+      );
     });
-
     menuWrapper.appendChild(menuList);
     userPermissionsGrid.appendChild(menuWrapper);
 
     const featuresWrapper = document.createElement("div");
     featuresWrapper.className =
       "rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900";
-
     const featuresTitle = document.createElement("p");
     featuresTitle.className =
       "mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
     featuresTitle.textContent = "Funcoes por Menu";
     featuresWrapper.appendChild(featuresTitle);
-
     const featuresList = document.createElement("div");
     featuresList.className = "space-y-3";
 
@@ -1369,35 +1821,18 @@
       featureItems.className = "space-y-2";
 
       group.features.forEach((featureKey) => {
-        const roleAllowsFeature = Boolean(defaultsForRole.features[featureKey]);
-        const hasCustom = Object.prototype.hasOwnProperty.call(
-          normalizedSelected.features,
-          featureKey
+        const selectedValue = hasOwn(normalizedSelected.features, featureKey)
+          ? Boolean(normalizedSelected.features[featureKey])
+          : null;
+        featureItems.appendChild(
+          buildPermissionRow(
+            "features",
+            featureKey,
+            PERMISSION_LABELS.features[featureKey] || featureKey,
+            Boolean(defaultsForRole.features[featureKey]),
+            selectedValue
+          )
         );
-        const checkedByCustomOrDefault = hasCustom ? normalizedSelected.features[featureKey] : true;
-        const checked = roleAllowsFeature && selectedMenus[group.menu] && checkedByCustomOrDefault;
-
-        const label = document.createElement("label");
-        label.className = "flex items-center gap-2 text-xs";
-
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.id = `perm_features_${featureKey}`;
-        input.dataset.section = "features";
-        input.dataset.key = featureKey;
-        input.dataset.roleAllowed = roleAllowsFeature ? "true" : "false";
-        input.dataset.menuKey = group.menu;
-        input.checked = checked;
-        input.disabled = !roleAllowsFeature || !selectedMenus[group.menu];
-        input.className =
-          "h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40";
-
-        const span = document.createElement("span");
-        span.textContent = PERMISSION_LABELS.features[featureKey] || featureKey;
-
-        label.appendChild(input);
-        label.appendChild(span);
-        featureItems.appendChild(label);
       });
 
       groupBlock.appendChild(featureItems);
@@ -1407,28 +1842,39 @@
     featuresWrapper.appendChild(featuresList);
     userPermissionsGrid.appendChild(featuresWrapper);
 
-    const syncFeatureAvailability = () => {
-      const menuSelection = normalizePermissionsPayload(collectUserPermissionsFromForm());
-      PERMISSION_MENU_GROUPS.forEach((group) => {
-        const menuIsChecked = Boolean(menuSelection.menus[group.menu]);
-        group.features.forEach((featureKey) => {
-          const featureInput = userPermissionsGrid.querySelector(
-            `input[data-section="features"][data-key="${featureKey}"]`
-          );
-          if (!featureInput) return;
-          const roleAllows = featureInput.dataset.roleAllowed === "true";
-          const enabled = roleAllows && menuIsChecked;
-          if (!enabled) featureInput.checked = false;
-          featureInput.disabled = !enabled;
-        });
-      });
+    const onPermissionsChanged = () => {
+      renderEffectivePermissionsPreview(role);
     };
 
     userPermissionsGrid
-      .querySelectorAll('input[type="checkbox"][data-section="menus"][data-key]')
-      .forEach((input) => input.addEventListener("change", syncFeatureAvailability));
+      .querySelectorAll('select[data-perm-mode="true"]')
+      .forEach((input) => input.addEventListener("change", onPermissionsChanged));
 
-    syncFeatureAvailability();
+    renderEffectivePermissionsPreview(role);
+  }
+
+  function renderEffectivePermissionsPreview(role) {
+    if (!userEffectivePermissionsPanel) return;
+    const overrides = normalizePermissionsPayload(collectUserPermissionsFromForm());
+    const effective = getEffectivePermissions(role, overrides);
+    const enabledMenus = PERMISSION_KEYS.menus
+      .filter((key) => effective.menus[key])
+      .map((key) => PERMISSION_LABELS.menus[key] || key);
+    const enabledFeatures = PERMISSION_KEYS.features
+      .filter((key) => effective.features[key])
+      .map((key) => PERMISSION_LABELS.features[key] || key);
+
+    userEffectivePermissionsPanel.innerHTML = `
+      <div class="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800/60">
+        <p class="font-semibold">Permissoes efetivas (tempo real)</p>
+        <p class="mt-1 text-slate-500 dark:text-slate-400">
+          Menus: ${enabledMenus.length ? enabledMenus.join(", ") : "nenhum"}
+        </p>
+        <p class="mt-1 text-slate-500 dark:text-slate-400">
+          Funcoes: ${enabledFeatures.length ? enabledFeatures.join(", ") : "nenhuma"}
+        </p>
+      </div>
+    `;
   }
 
   function collectUserPermissionsFromForm() {
@@ -1436,15 +1882,14 @@
     if (!userPermissionsGrid) return collected;
 
     userPermissionsGrid
-      .querySelectorAll('input[type="checkbox"][data-section][data-key]')
-      .forEach((checkbox) => {
-        const section = checkbox.dataset.section;
-        const key = checkbox.dataset.key;
-        const roleAllowed = checkbox.dataset.roleAllowed === "true";
+      .querySelectorAll('select[data-perm-mode="true"][data-section][data-key]')
+      .forEach((select) => {
+        const section = select.dataset.section;
+        const key = select.dataset.key;
         if (!section || !key) return;
-        if (!roleAllowed) return;
         if (!Object.prototype.hasOwnProperty.call(collected, section)) return;
-        collected[section][key] = Boolean(checkbox.checked);
+        if (select.value === "inherit") return;
+        collected[section][key] = select.value === "allow";
       });
 
     return collected;
@@ -1463,6 +1908,8 @@
     if (userPasswordInput) userPasswordInput.required = true;
     if (userActiveInput) userActiveInput.checked = true;
     buildUserRoleOptions(ROLE_ADMIN_ESCOLA);
+    populateUserPresetOptions();
+    if (userPresetSelect) userPresetSelect.value = "";
     buildUserPermissionsGrid(ROLE_ADMIN_ESCOLA, null);
     syncUserSchoolField(String(currentUser?.schoolId || ""));
     openUserModal();
@@ -1487,6 +1934,8 @@
     if (userModalTitle) userModalTitle.textContent = "Editar Usuario";
 
     buildUserRoleOptions(user.role || ROLE_ADMIN_ESCOLA);
+    populateUserPresetOptions();
+    if (userPresetSelect) userPresetSelect.value = "";
     buildUserPermissionsGrid(user.role || ROLE_ADMIN_ESCOLA, user.permissions || null);
     syncUserSchoolField(String(user.schoolId || ""));
     openUserModal();
@@ -1538,10 +1987,17 @@
         user.schoolName || (user.schoolId ? getSchoolNameById(user.schoolId) : "Todas");
       const canManage = canManageTargetUser(user);
       const isSelf = Number(user.id) === Number(currentUser?.id);
-      const canEdit = canManage && hasPermission("features.users_edit");
-      const canToggleActive = canManage && hasPermission("features.users_disable") && !isSelf;
+      const simulationWriteLocked = isSimulationActive();
+      const canEdit = canManage && hasPermission("features.users_edit") && !simulationWriteLocked;
+      const canToggleActive =
+        canManage && hasPermission("features.users_disable") && !isSelf && !simulationWriteLocked;
       const canResetPassword =
-        canManage && hasPermission("features.users_reset_password") && isSuperAdmin() && !isSelf;
+        canManage &&
+        hasPermission("features.users_reset_password") &&
+        isSuperAdmin() &&
+        !isSelf &&
+        !simulationWriteLocked;
+      const canSimulate = canManage && isSuperAdmin() && !isSelf && !isSimulationActive();
       const deactivateLabel = user.active === false ? "Reativar" : "Desativar";
       const deactivateIcon = user.active === false ? "fa-user-check" : "fa-user-slash";
 
@@ -1569,6 +2025,13 @@
                 : `<span class="text-xs text-slate-400">Sem permissao</span>`
             }
             ${
+              canSimulate
+                ? `<button type="button" data-action="simulate" class="text-emerald-600 transition hover:text-emerald-800" title="Simular login">
+                     <i class="fas fa-arrow-right"></i>
+                   </button>`
+                : ""
+            }
+            ${
               canToggleActive
                 ? `<button type="button" data-action="toggle-active" class="text-amber-600 transition hover:text-amber-800" title="${deactivateLabel}">
                      <i class="fas ${deactivateIcon}"></i>
@@ -1594,6 +2057,9 @@
       });
       tr.querySelector('[data-action="reset-password"]')?.addEventListener("click", () => {
         resetUserPassword(user);
+      });
+      tr.querySelector('[data-action="simulate"]')?.addEventListener("click", () => {
+        simulateUserAccess(user);
       });
 
       usersTableBody.appendChild(tr);
@@ -1808,6 +2274,41 @@
     }
   }
 
+  async function simulateUserAccess(user) {
+    if (!isSuperAdmin() || !user?.id) {
+      alert("Somente superadmin pode simular acessos.");
+      return;
+    }
+    if (!user.active) {
+      alert("Usuario inativo. Reative o usuario antes de simular.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Simular login como "${user.name || user.email}"?\n\n` +
+          "Voce podera sair da simulacao a qualquer momento."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/simulate/user/${user.id}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "simulate-user-error");
+        throw new Error(reason);
+      }
+      const payload = await res.json();
+      await startSimulationSession(payload);
+    } catch (error) {
+      console.error("Erro ao simular usuario:", error);
+      alert("Erro ao iniciar simulacao de usuario.");
+    }
+  }
+
   function summarizeSchedule(scheduleObject) {
     const source = scheduleObject && typeof scheduleObject === "object" ? scheduleObject : {};
     return {
@@ -1934,11 +2435,17 @@
         const reason = await readApiErrorMessage(restoreRes, "restore-selected-backup-error");
         throw new Error(reason);
       }
+      const payload = await restoreRes.json().catch(() => ({}));
 
       await loadConfigSchedule();
+      await loadScheduleChangeRequests();
       await loadBackupSnapshots();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      alert("Backup restaurado com sucesso.");
+      if (payload?.pendingApproval) {
+        alert("Solicitacao enviada para aprovacao do superadmin.");
+      } else {
+        alert("Backup restaurado com sucesso.");
+      }
     } catch (error) {
       console.error("Erro ao restaurar backup selecionado:", error);
       alert("Erro ao restaurar backup.");
@@ -2121,6 +2628,151 @@
     }
   }
 
+  function formatHistoryDateLabel(dateValue) {
+    if (!dateValue) return "--";
+    const asDate = new Date(`${dateValue}T00:00:00`);
+    if (Number.isNaN(asDate.getTime())) return String(dateValue);
+    return asDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  }
+
+  function renderOperationalHistoryChart(series) {
+    if (!dashboardOperationalCanvas) return;
+    const ctx = dashboardOperationalCanvas.getContext("2d");
+    if (!ctx) return;
+
+    const width = Math.max(360, dashboardOperationalCanvas.clientWidth || 900);
+    const height = 260;
+    const dpr = window.devicePixelRatio || 1;
+    dashboardOperationalCanvas.width = Math.floor(width * dpr);
+    dashboardOperationalCanvas.height = Math.floor(height * dpr);
+    dashboardOperationalCanvas.style.width = `${width}px`;
+    dashboardOperationalCanvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    if (!Array.isArray(series) || !series.length) {
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px sans-serif";
+      ctx.fillText("Sem dados historicos suficientes.", 16, 30);
+      return;
+    }
+
+    const padding = { top: 14, right: 18, bottom: 38, left: 42 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+
+    const latencyValues = series.map((row) => Number(row.dbLatencyAvgMs) || 0);
+    const playbackValues = series.map((row) => Number(row.playbackFailures) || 0);
+    const alertValues = series.map((row) => Number(row.openAlerts) || 0);
+    const maxValue = Math.max(1, ...latencyValues, ...playbackValues, ...alertValues);
+
+    const getX = (index) => {
+      if (series.length <= 1) return padding.left + plotWidth / 2;
+      return padding.left + (index / (series.length - 1)) * plotWidth;
+    };
+    const getY = (value) => padding.top + plotHeight - (value / maxValue) * plotHeight;
+
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, padding.top);
+    ctx.lineTo(padding.left, padding.top + plotHeight);
+    ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+    ctx.stroke();
+
+    const drawLine = (values, color) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      values.forEach((value, index) => {
+        const x = getX(index);
+        const y = getY(value);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      values.forEach((value, index) => {
+        const x = getX(index);
+        const y = getY(value);
+        ctx.beginPath();
+        ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    };
+
+    drawLine(latencyValues, "#0284c7");
+    drawLine(playbackValues, "#f97316");
+    drawLine(alertValues, "#dc2626");
+
+    ctx.fillStyle = "#64748b";
+    ctx.font = "11px sans-serif";
+    ctx.fillText("0", 8, padding.top + plotHeight + 4);
+    ctx.fillText(String(Math.round(maxValue)), 8, padding.top + 4);
+
+    const labelIndexes = Array.from(
+      new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])
+    ).filter((index) => index >= 0);
+    labelIndexes.forEach((index) => {
+      const label = formatHistoryDateLabel(series[index]?.date);
+      const x = getX(index);
+      ctx.fillStyle = "#64748b";
+      ctx.font = "11px sans-serif";
+      ctx.fillText(label, x - 20, height - 12);
+    });
+  }
+
+  async function loadDashboardOperationalHistory() {
+    if (!dashboardOperationalCanvas || !dashboardOperationalMeta) return;
+
+    if (!canViewDashboardOperationalHistory()) {
+      dashboardOperationalMeta.textContent =
+        "Sem permissao para visualizar historico operacional.";
+      renderOperationalHistoryChart([]);
+      return;
+    }
+
+    if (!currentUser) {
+      dashboardOperationalMeta.textContent = "Faca login para carregar o historico.";
+      renderOperationalHistoryChart([]);
+      return;
+    }
+
+    const daysRaw = Number.parseInt(String(dashboardOperationalDays?.value || "14"), 10);
+    const days = Number.isInteger(daysRaw) ? Math.min(Math.max(daysRaw, 3), 90) : 14;
+    const schoolId = isSuperAdmin()
+      ? String(dashboardOperationalSchoolFilter?.value || "")
+      : String(currentUser.schoolId || "");
+
+    const params = new URLSearchParams();
+    params.set("days", String(days));
+    if (schoolId) params.set("schoolId", schoolId);
+
+    dashboardOperationalMeta.textContent = "Carregando historico operacional...";
+    try {
+      const res = await apiFetch(`${API_BASE}/monitor/history?${params.toString()}`);
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "fetch-monitor-history-error");
+        throw new Error(reason);
+      }
+
+      const payload = await res.json();
+      const series = Array.isArray(payload?.series) ? payload.series : [];
+      renderOperationalHistoryChart(series);
+
+      const labelScope = payload?.scope === "school"
+        ? `Escola: ${getSchoolNameById(payload.schoolId) || payload.schoolId}`
+        : "Escopo: global";
+      const lastDate = series.length ? formatHistoryDateLabel(series[series.length - 1].date) : "--";
+      dashboardOperationalMeta.textContent = `${labelScope} | ${days} dias | ultimo ponto: ${lastDate}`;
+    } catch (error) {
+      console.error("Erro ao carregar historico operacional:", error);
+      dashboardOperationalMeta.textContent = "Erro ao carregar historico operacional.";
+      renderOperationalHistoryChart([]);
+    }
+  }
+
   async function loadDashboardMonitorInfo() {
     if (!dashboardDbStatus || !dashboardDbLatency || !dashboardOpenAlerts || !dashboardAlertList) return;
 
@@ -2135,6 +2787,8 @@
       dashboardDbStatus.textContent = "--";
       dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-slate-500";
       dashboardDbLatency.textContent = "Latencia: --";
+      if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
+      if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
     } else {
       try {
         const healthRes = await fetch(`${API_BASE}/health`);
@@ -2154,6 +2808,8 @@
         dashboardDbStatus.textContent = "Banco indisponivel";
         dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-rose-600";
         dashboardDbLatency.textContent = "Latencia: --";
+        if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
+        if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
       }
     }
 
@@ -2161,11 +2817,14 @@
       dashboardOpenAlerts.textContent = "--";
       dashboardSchoolsWithoutSchedule.textContent = "--";
       dashboardMonitorCheckedAt.textContent = "Ultima verificacao: --";
+      if (dashboardPlaybackFailures) dashboardPlaybackFailures.textContent = "Falhas de toque (24h): --";
+      if (dashboardPendingApprovals) dashboardPendingApprovals.textContent = "Aprovacoes pendentes: --";
       if (canSeeMonitorAlerts) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Faca login para visualizar alertas.</li>`;
       } else {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
       }
+      await loadDashboardOperationalHistory();
       return;
     }
 
@@ -2212,16 +2871,72 @@
         }
       }
 
+      if (dashboardPlaybackFailures) {
+        const playbackValue = Number.isFinite(monitorPayload?.playbackFailuresLast24h)
+          ? monitorPayload.playbackFailuresLast24h
+          : "--";
+        dashboardPlaybackFailures.textContent = `Falhas de toque (24h): ${playbackValue}`;
+      }
+
+      if (dashboardPendingApprovals) {
+        const pendingValue = Number.isFinite(monitorPayload?.pendingApprovals)
+          ? monitorPayload.pendingApprovals
+          : "--";
+        dashboardPendingApprovals.textContent = `Aprovacoes pendentes: ${pendingValue}`;
+      }
+
+      if (dashboardApiUptime) {
+        const uptimeSeconds = Number.isFinite(monitorPayload?.runtime?.uptimeSeconds)
+          ? monitorPayload.runtime.uptimeSeconds
+          : null;
+        const uptimeText =
+          uptimeSeconds === null
+            ? "--"
+            : `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`;
+        dashboardApiUptime.textContent = `Uptime API: ${uptimeText}`;
+      }
+
+      if (dashboardLastSweeps) {
+        const monitorAt = monitorPayload?.runtime?.lastMonitoringSweepAt
+          ? new Date(monitorPayload.runtime.lastMonitoringSweepAt).toLocaleString("pt-BR")
+          : "--";
+        const backupAt = monitorPayload?.runtime?.lastDailyBackupSweepAt
+          ? new Date(monitorPayload.runtime.lastDailyBackupSweepAt).toLocaleString("pt-BR")
+          : "--";
+        dashboardLastSweeps.textContent = `Ultimas execucoes: monitor ${monitorAt} | backup ${backupAt}`;
+      }
+
       if (!canSeeMonitorAlerts) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
+        await loadDashboardOperationalHistory();
         return;
       }
-      if (!alerts.length) {
+      dashboardAlertList.innerHTML = "";
+      const schoolsStatus = Array.isArray(monitorPayload?.schoolsStatus)
+        ? monitorPayload.schoolsStatus
+        : [];
+      if (schoolsStatus.length) {
+        schoolsStatus.slice(0, 5).forEach((schoolStatus) => {
+          const li = document.createElement("li");
+          const toneClass = schoolStatus.hasSchedule
+            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+            : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300";
+          li.className = `rounded-xl px-3 py-2 ${toneClass}`;
+          li.textContent = `${schoolStatus.schoolName}: ${
+            schoolStatus.hasSchedule ? "com horarios" : "sem horarios"
+          } | alertas: ${schoolStatus.openAlerts || 0} | pendentes: ${
+            schoolStatus.pendingApprovals || 0
+          }`;
+          dashboardAlertList.appendChild(li);
+        });
+      }
+
+      if (!alerts.length && !schoolsStatus.length) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-emerald-100 px-3 py-2 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Nenhum alerta aberto.</li>`;
+        await loadDashboardOperationalHistory();
         return;
       }
 
-      dashboardAlertList.innerHTML = "";
       alerts.slice(0, 5).forEach((alertItem) => {
         const li = document.createElement("li");
         const severityClass =
@@ -2234,6 +2949,7 @@
         li.textContent = `${alertItem.schoolName || "Global"}: ${alertItem.message || "-"}`;
         dashboardAlertList.appendChild(li);
       });
+      await loadDashboardOperationalHistory();
     } catch (error) {
       console.error("Erro ao carregar monitoramento do dashboard:", error);
       if (canSeeOpenAlerts) {
@@ -2243,11 +2959,16 @@
         dashboardSchoolsWithoutSchedule.textContent = "--";
         dashboardMonitorCheckedAt.textContent = "Ultima verificacao: --";
       }
+      if (dashboardPlaybackFailures) dashboardPlaybackFailures.textContent = "Falhas de toque (24h): --";
+      if (dashboardPendingApprovals) dashboardPendingApprovals.textContent = "Aprovacoes pendentes: --";
+      if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
+      if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
       if (canSeeMonitorAlerts) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-rose-100 px-3 py-2 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Erro ao carregar alertas.</li>`;
       } else {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
       }
+      await loadDashboardOperationalHistory();
     }
   }
 
@@ -2274,6 +2995,255 @@
       const reason = await readApiErrorMessage(res, "save-schedule-error");
       throw new Error(reason);
     }
+    const body = await res.json().catch(() => null);
+    return { status: res.status, body };
+  }
+
+  function canApproveScheduleChanges() {
+    return (
+      Boolean(currentUser) &&
+      !isSimulationActive() &&
+      isSuperAdmin() &&
+      hasPermission("menus.config") &&
+      hasPermission("features.config_approve_changes")
+    );
+  }
+
+  function getSignalsByTime(schedule, period) {
+    const list = Array.isArray(schedule?.[period]) ? schedule[period] : [];
+    const map = new Map();
+    list.forEach((item) => {
+      const time = String(item?.time || "").trim();
+      if (!time) return;
+      map.set(time, {
+        time,
+        name: String(item?.name || "").trim(),
+        music: String(item?.music || "").trim(),
+        duration: Number(item?.duration) || 15,
+      });
+    });
+    return map;
+  }
+
+  function computeScheduleDiff(beforePayload, afterPayload) {
+    const periodDiffs = {};
+    PERIODS.forEach((period) => {
+      const beforeMap = getSignalsByTime(beforePayload || {}, period);
+      const afterMap = getSignalsByTime(afterPayload || {}, period);
+      const times = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+      const items = [];
+      Array.from(times)
+        .sort((a, b) => a.localeCompare(b))
+        .forEach((time) => {
+          const before = beforeMap.get(time) || null;
+          const after = afterMap.get(time) || null;
+          if (!before && after) {
+            items.push({ type: "added", time, before: null, after });
+            return;
+          }
+          if (before && !after) {
+            items.push({ type: "removed", time, before, after: null });
+            return;
+          }
+          if (!before || !after) return;
+          const changed =
+            before.name !== after.name ||
+            before.music !== after.music ||
+            Number(before.duration) !== Number(after.duration);
+          if (changed) {
+            items.push({ type: "changed", time, before, after });
+          }
+        });
+      periodDiffs[period] = items;
+    });
+    return periodDiffs;
+  }
+
+  function renderScheduleDiffHtml(beforePayload, afterPayload) {
+    const diff = computeScheduleDiff(beforePayload, afterPayload);
+    const totalChanges = PERIODS.reduce(
+      (sum, period) => sum + (Array.isArray(diff[period]) ? diff[period].length : 0),
+      0
+    );
+    if (!totalChanges) {
+      return `<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Sem diferencas detectadas entre antes e depois.</p>`;
+    }
+
+    const periodBlocks = PERIODS.map((period) => {
+      const changes = diff[period] || [];
+      if (!changes.length) return "";
+      const lines = changes
+        .map((item) => {
+          if (item.type === "added") {
+            return `<li class="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">+ ${item.time} | ${item.after.name} | ${item.after.music} | ${item.after.duration}s</li>`;
+          }
+          if (item.type === "removed") {
+            return `<li class="rounded-md bg-rose-50 px-2 py-1 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">- ${item.time} | ${item.before.name} | ${item.before.music} | ${item.before.duration}s</li>`;
+          }
+          return `<li class="rounded-md bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">~ ${item.time} | ${item.before.name} -> ${item.after.name} | ${item.before.music} -> ${item.after.music} | ${item.before.duration}s -> ${item.after.duration}s</li>`;
+        })
+        .join("");
+      return `
+        <div class="mt-2">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">${periods[period] || period}</p>
+          <ul class="mt-1 space-y-1 text-xs">${lines}</ul>
+        </div>
+      `;
+    }).join("");
+
+    return `<div class="mt-2">${periodBlocks}</div>`;
+  }
+
+  function renderScheduleChangeRequests() {
+    if (!scheduleRequestsList) return;
+    if (!canAccessConfigMenu()) {
+      scheduleRequestsList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">Sem permissao para visualizar aprovacoes.</li>`;
+      return;
+    }
+    if (!pendingScheduleRequests.length) {
+      scheduleRequestsList.innerHTML = `<li class="rounded-xl bg-emerald-100 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Nenhuma solicitacao pendente para esta escola.</li>`;
+      return;
+    }
+
+    scheduleRequestsList.innerHTML = "";
+    pendingScheduleRequests.forEach((requestItem) => {
+      const li = document.createElement("li");
+      li.className = "rounded-xl border border-slate-200 p-3 dark:border-slate-700";
+      const createdAt = requestItem.createdAt
+        ? new Date(requestItem.createdAt).toLocaleString("pt-BR")
+        : "--";
+      const summary = requestItem.payloadSummary
+        ? formatScheduleSummary(requestItem.payloadSummary)
+        : "Sem resumo";
+      const beforeSummary = requestItem.beforeSummary
+        ? formatScheduleSummary(requestItem.beforeSummary)
+        : "Sem resumo";
+      const statusColor =
+        requestItem.status === "approved"
+          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+          : requestItem.status === "rejected"
+            ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+            : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
+
+      li.innerHTML = `
+        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p class="text-sm font-semibold">${requestItem.proposedByName || "Usuario"} - ${createdAt}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Antes: ${beforeSummary}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Depois: ${summary}</p>
+          </div>
+          <span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusColor}">
+            ${requestItem.status}
+          </span>
+        </div>
+        ${renderScheduleDiffHtml(requestItem.beforePayload || {}, requestItem.payload || {})}
+      `;
+
+      if (canApproveScheduleChanges() && requestItem.status === "pending") {
+        const actions = document.createElement("div");
+        actions.className = "mt-3 inline-flex items-center gap-2";
+        actions.innerHTML = `
+          <button type="button" data-action="approve" class="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700">
+            Aprovar
+          </button>
+          <button type="button" data-action="reject" class="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700">
+            Rejeitar
+          </button>
+        `;
+        actions.querySelector('[data-action="approve"]')?.addEventListener("click", () => {
+          approveScheduleChangeRequest(requestItem);
+        });
+        actions.querySelector('[data-action="reject"]')?.addEventListener("click", () => {
+          rejectScheduleChangeRequest(requestItem);
+        });
+        li.appendChild(actions);
+      }
+
+      scheduleRequestsList.appendChild(li);
+    });
+  }
+
+  async function loadScheduleChangeRequests() {
+    if (!scheduleRequestsList) return;
+    const schoolId = getCurrentSchoolId();
+    pendingScheduleRequests = [];
+
+    if (!schoolId) {
+      renderScheduleChangeRequests();
+      return;
+    }
+    if (!canAccessConfigMenu()) {
+      renderScheduleChangeRequests();
+      return;
+    }
+
+    scheduleRequestsList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">Carregando solicitacoes...</li>`;
+
+    try {
+      const statusQuery = canApproveScheduleChanges() ? "pending" : "";
+      const params = new URLSearchParams();
+      if (statusQuery) params.set("status", statusQuery);
+      params.set("limit", "25");
+      const query = params.toString() ? `?${params.toString()}` : "";
+
+      const res = await apiFetch(`${SCHOOLS_API_URL}/${schoolId}/change-requests${query}`);
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "fetch-change-requests-error");
+        throw new Error(reason);
+      }
+      const data = await res.json();
+      pendingScheduleRequests = Array.isArray(data) ? data : [];
+      renderScheduleChangeRequests();
+    } catch (error) {
+      console.error("Erro ao carregar solicitacoes de mudanca:", error);
+      scheduleRequestsList.innerHTML = `<li class="rounded-xl bg-rose-100 px-3 py-2 text-sm text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Erro ao carregar solicitacoes.</li>`;
+    }
+  }
+
+  async function approveScheduleChangeRequest(requestItem) {
+    if (!requestItem?.id || !canApproveScheduleChanges()) return;
+    if (!confirm("Aprovar esta solicitacao e publicar os horarios?")) return;
+    try {
+      const res = await apiFetch(`${API_BASE}/change-requests/${requestItem.id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: "Aprovado pelo superadmin" }),
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "approve-change-request-error");
+        throw new Error(reason);
+      }
+      await loadConfigSchedule();
+      await loadScheduleChangeRequests();
+      window.dispatchEvent(
+        new CustomEvent("school:changed", { detail: { schoolId: getCurrentSchoolId() } })
+      );
+      alert("Solicitacao aprovada e publicada.");
+    } catch (error) {
+      console.error("Erro ao aprovar solicitacao:", error);
+      alert("Erro ao aprovar solicitacao.");
+    }
+  }
+
+  async function rejectScheduleChangeRequest(requestItem) {
+    if (!requestItem?.id || !canApproveScheduleChanges()) return;
+    const note = prompt("Motivo da rejeicao (opcional):", "");
+    try {
+      const res = await apiFetch(`${API_BASE}/change-requests/${requestItem.id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: note || "" }),
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "reject-change-request-error");
+        throw new Error(reason);
+      }
+      await loadScheduleChangeRequests();
+      alert("Solicitacao rejeitada.");
+    } catch (error) {
+      console.error("Erro ao rejeitar solicitacao:", error);
+      alert("Erro ao rejeitar solicitacao.");
+    }
   }
 
   async function deleteSignal(period, time) {
@@ -2294,9 +3264,13 @@
       if (!data) throw new Error("missing-schedule");
 
       data[period] = (data[period] || []).filter((item) => item.time !== time);
-      await saveScheduleBySchoolId(schoolId, data);
+      const saveResult = await saveScheduleBySchoolId(schoolId, data);
       await loadConfigSchedule();
+      await loadScheduleChangeRequests();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
+      if (saveResult?.body?.pendingApproval) {
+        alert("Solicitacao enviada para aprovacao do superadmin.");
+      }
     } catch (err) {
       console.error("Erro ao remover sinal:", err);
       alert("Erro ao remover horario.");
@@ -2446,10 +3420,14 @@
         data[key].sort((a, b) => String(a.time).localeCompare(String(b.time)));
       });
 
-      await saveScheduleBySchoolId(schoolId, data);
+      const saveResult = await saveScheduleBySchoolId(schoolId, data);
       closeModal();
       await loadConfigSchedule();
+      await loadScheduleChangeRequests();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
+      if (saveResult?.body?.pendingApproval) {
+        alert("Solicitacao enviada para aprovacao do superadmin.");
+      }
     } catch (err) {
       console.error("Erro ao salvar horario:", err);
       alert("Erro ao salvar horario.");
@@ -2520,9 +3498,15 @@
         const reason = await readApiErrorMessage(res, "apply-template-error");
         throw new Error(reason);
       }
+      const payload = await res.json().catch(() => ({}));
       await loadConfigSchedule();
+      await loadScheduleChangeRequests();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      alert("Template aplicado com sucesso.");
+      if (payload?.pendingApproval) {
+        alert("Solicitacao enviada para aprovacao do superadmin.");
+      } else {
+        alert("Template aplicado com sucesso.");
+      }
     } catch (err) {
       console.error("Erro ao aplicar template:", err);
       alert("Erro ao aplicar template.");
@@ -2612,11 +3596,17 @@
         const reason = await readApiErrorMessage(res, "restore-backup-error");
         throw new Error(reason);
       }
+      const responsePayload = await res.json().catch(() => ({}));
 
       await loadConfigSchedule();
+      await loadScheduleChangeRequests();
       await loadBackupSnapshots();
       window.dispatchEvent(new CustomEvent("school:changed", { detail: { schoolId } }));
-      alert("Backup importado com sucesso.");
+      if (responsePayload?.pendingApproval) {
+        alert("Solicitacao enviada para aprovacao do superadmin.");
+      } else {
+        alert("Backup importado com sucesso.");
+      }
     } catch (err) {
       console.error("Erro ao importar backup:", err);
       alert("Erro ao importar backup. Verifique o JSON.");
@@ -2654,6 +3644,7 @@
       }
 
       const data = await res.json();
+      clearSimulationSourceSession();
       setAuthSession(data.token, data.user);
       setCurrentUser(data.user);
       hideAuthOverlay();
@@ -2739,6 +3730,7 @@
     window.getAuthToken = getAuthToken;
     window.getCurrentSchoolId = getCurrentSchoolId;
     window.isAuthenticated = () => Boolean(getAuthToken() && currentUser);
+    populateUserPresetOptions();
 
     navDashboard?.addEventListener("click", (event) => {
       event.preventDefault();
@@ -2767,6 +3759,8 @@
     dashboardSchoolSelect?.addEventListener("change", (event) => {
       setCurrentSchoolId(event.target.value);
     });
+    dashboardOperationalSchoolFilter?.addEventListener("change", loadDashboardOperationalHistory);
+    dashboardOperationalDays?.addEventListener("change", loadDashboardOperationalHistory);
 
     configSchoolSelect?.addEventListener("change", (event) => {
       setCurrentSchoolId(event.target.value);
@@ -2788,6 +3782,8 @@
       buildUserPermissionsGrid(userRoleInput?.value || ROLE_ADMIN_ESCOLA, snapshot);
       syncUserSchoolField(userSchoolSelect?.value || "");
     });
+    applyUserPresetBtn?.addEventListener("click", applyUserPreset);
+    resetUserOverridesBtn?.addEventListener("click", resetUserOverridesToProfileDefaults);
     userForm?.addEventListener("submit", saveUser);
 
     saveTemplateBtn?.addEventListener("click", saveTemplateFromCurrentSchool);
@@ -2797,6 +3793,7 @@
     refreshBackupsBtn?.addEventListener("click", loadBackupSnapshots);
     previewBackupBtn?.addEventListener("click", previewSelectedBackup);
     restoreBackupBtn?.addEventListener("click", restoreSelectedBackup);
+    refreshScheduleRequestsBtn?.addEventListener("click", loadScheduleChangeRequests);
 
     auditApplyFiltersBtn?.addEventListener("click", loadAuditLogs);
     refreshAuditBtn?.addEventListener("click", loadAuditLogs);
@@ -2809,6 +3806,7 @@
 
     loginForm?.addEventListener("submit", handleLoginSubmit);
     logoutBtn?.addEventListener("click", logout);
+    exitSimulationBtn?.addEventListener("click", exitSimulation);
 
     modal?.addEventListener("click", (event) => {
       if (event.target === modal) closeModal();

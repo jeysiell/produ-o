@@ -84,6 +84,39 @@ CREATE TABLE IF NOT EXISTS school_backups (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS schedule_change_requests (
+  id BIGSERIAL PRIMARY KEY,
+  school_id INTEGER NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  proposed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  payload JSONB NOT NULL,
+  before_payload JSONB,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+  review_note TEXT,
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE schedule_change_requests
+  ADD COLUMN IF NOT EXISTS before_payload JSONB;
+
+CREATE TABLE IF NOT EXISTS operational_daily_metrics (
+  id BIGSERIAL PRIMARY KEY,
+  metric_date DATE NOT NULL,
+  school_id INTEGER REFERENCES schools(id) ON DELETE CASCADE,
+  db_latency_avg_ms NUMERIC(10,2),
+  db_latency_max_ms NUMERIC(10,2),
+  open_alerts INTEGER NOT NULL DEFAULT 0,
+  playback_failures INTEGER NOT NULL DEFAULT 0,
+  pending_approvals INTEGER NOT NULL DEFAULT 0,
+  schools_without_schedule INTEGER NOT NULL DEFAULT 0,
+  samples INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (metric_date, school_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_schedules_school_period_time
   ON schedules (school_id, period, time);
 
@@ -98,3 +131,9 @@ CREATE INDEX IF NOT EXISTS idx_alerts_status_school
 
 CREATE INDEX IF NOT EXISTS idx_school_backups_school_created_at
   ON school_backups (school_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_change_requests_school_status
+  ON schedule_change_requests (school_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_operational_daily_metrics_school_date
+  ON operational_daily_metrics (school_id, metric_date DESC);
