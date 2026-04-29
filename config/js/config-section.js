@@ -1961,7 +1961,7 @@
       Math.floor(durationSeconds * sampleRate),
       Math.max(0, audioBuffer.length - startFrame)
     );
-    const fadeOutFrames = Math.min(frameCount, Math.floor(2 * sampleRate));
+    const fadeOutFrames = Math.min(frameCount, Math.floor(4 * sampleRate));
     const bytesPerSample = 2;
     const blockAlign = channels * bytesPerSample;
     const dataSize = frameCount * blockAlign;
@@ -2003,7 +2003,7 @@
     for (let frame = 0; frame < frameCount; frame += 1) {
       const fadeMultiplier =
         fadeOutFrames > 0 && frame >= frameCount - fadeOutFrames
-          ? Math.max(0, (frameCount - frame) / fadeOutFrames)
+          ? Math.sin(Math.max(0, (frameCount - frame) / fadeOutFrames) * (Math.PI / 2))
           : 1;
       for (let channel = 0; channel < channels; channel += 1) {
         const sample = Math.max(

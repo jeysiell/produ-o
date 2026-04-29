@@ -309,12 +309,16 @@ async function initAudio(music = "", duration = 12, volume = 0.9) {
     await audio.play();
     currentSource = { audio, source, gain };
 
+    const stopDelayMs = usingRemoteAudio
+      ? Math.max(0, (audio.duration || duration || 0) * 1000 + 250)
+      : duration * 1000;
+
     setTimeout(() => {
       audio.pause();
       source?.disconnect();
       gain?.disconnect();
       currentSource = null;
-    }, duration * 1000);
+    }, stopDelayMs);
   } catch (err) {
     console.error("Erro audio:", err);
     reportPlaybackError(err, music, duration);
