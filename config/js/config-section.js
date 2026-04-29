@@ -496,6 +496,7 @@
   const saveAudioTrackBtn = document.getElementById("saveAudioTrackBtn");
   const refreshAudioTracksBtn = document.getElementById("refreshAudioTracksBtn");
   const audioTracksTableBody = document.getElementById("audioTracksTableBody");
+  const audioStorageUsage = document.getElementById("audioStorageUsage");
 
   const auditSchoolFilter = document.getElementById("auditSchoolFilter");
   const auditUserFilter = document.getElementById("auditUserFilter");
@@ -550,6 +551,7 @@
   let templates = [];
   let users = [];
   let audioTracks = [];
+  let audioStorageStats = null;
   let selectedAudioFile = null;
   let selectedAudioBuffer = null;
   let previewAudioElement = null;
@@ -1765,6 +1767,33 @@
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   }
 
+  function formatBytes(value) {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  function renderAudioStorageUsage() {
+    if (!audioStorageUsage) return;
+    if (!audioStorageStats) {
+      audioStorageUsage.textContent = "Uso do storage: --";
+      audioStorageUsage.className =
+        "mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300";
+      return;
+    }
+    const total = Number(audioStorageStats.totalSizeBytes) || 0;
+    const limit = Number(audioStorageStats.softLimitBytes) || 0;
+    const pct = limit > 0 ? Math.min(999, (total / limit) * 100) : 0;
+    const uploadMax = Number(audioStorageStats.uploadMaxBytes) || 0;
+    audioStorageUsage.textContent = `Uso do storage: ${formatBytes(total)} de ${formatBytes(limit)} (${pct.toFixed(1)}%). Limite por upload: ${formatBytes(uploadMax)}.`;
+    const warning = Boolean(audioStorageStats.warning);
+    audioStorageUsage.className = warning
+      ? "mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200"
+      : "mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300";
+  }
+
   function updateAudioClipRangeLabel() {
     const start = Number.parseFloat(audioClipStartInput?.value || "0") || 0;
     const end = start + 20;
@@ -1996,17 +2025,29 @@
     if (!currentUser) return;
     try {
       const query = canManageAudioTracks() ? "?includeInactive=true" : "";
-      const res = await apiFetch(`${API_BASE}/audio-tracks${query}`);
-      if (!res.ok) {
-        const reason = await readApiErrorMessage(res, "fetch-audio-tracks-error");
+      const [tracksRes, statsRes] = await Promise.all([
+        apiFetch(`${API_BASE}/audio-tracks${query}`),
+        canManageAudioTracks()
+          ? apiFetch(`${API_BASE}/audio-tracks/stats`)
+          : Promise.resolve(null),
+      ]);
+      if (!tracksRes.ok) {
+        const reason = await readApiErrorMessage(tracksRes, "fetch-audio-tracks-error");
         throw new Error(reason);
       }
-      const data = await res.json();
+      if (statsRes && statsRes.ok) {
+        audioStorageStats = await statsRes.json();
+      } else {
+        audioStorageStats = null;
+      }
+      const data = await tracksRes.json();
       audioTracks = Array.isArray(data) ? data : [];
       refreshAudioSelects();
+      renderAudioStorageUsage();
       renderAudioTracksTable();
     } catch (error) {
       console.error("Erro ao carregar audios:", error);
+      renderAudioStorageUsage();
       renderAudioTracksTable("Erro ao carregar audios.");
     }
   }
@@ -2031,7 +2072,7 @@
       tr.className = "text-slate-700 dark:text-slate-200";
       tr.innerHTML = `
         <td class="py-3 pr-4 font-semibold">${track.name || "-"}</td>
-        <td class="py-3 pr-4">${track.durationSeconds || 20}s</td>
+        <td class="py-3 pr-4">${track.durationSeconds || 20}s<br><span class="text-xs text-slate-500">${formatBytes(track.sizeBytes)}</span></td>
         <td class="py-3 pr-4">${track.active === false ? "Inativo" : "Ativo"}</td>
         <td class="py-3 text-right">
           <button type="button" data-action="play" class="mr-2 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
@@ -2039,6 +2080,9 @@
           </button>
           <button type="button" data-action="toggle" class="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
             ${track.active === false ? "Ativar" : "Desativar"}
+          </button>
+          <button type="button" data-action="delete-permanent" class="ml-2 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">
+            Excluir definitivo
           </button>
         </td>
       `;
@@ -2051,6 +2095,9 @@
       });
       tr.querySelector('[data-action="toggle"]')?.addEventListener("click", () => {
         updateAudioTrackStatus(track, track.active === false);
+      });
+      tr.querySelector('[data-action="delete-permanent"]')?.addEventListener("click", () => {
+        deleteAudioTrackPermanently(track);
       });
       audioTracksTableBody.appendChild(tr);
     });
@@ -2119,8 +2166,13 @@
       return;
     }
     const start = Number.parseFloat(audioClipStartInput?.value || "0") || 0;
-    const clipBlob = encodeAudioBufferToWav(selectedAudioBuffer, start, 20);
-    const audioBase64 = await blobToBase64(clipBlob);
+      const clipBlob = encodeAudioBufferToWav(selectedAudioBuffer, start, 20);
+      const uploadLimit = Number(audioStorageStats?.uploadMaxBytes) || 3 * 1024 * 1024;
+      if (clipBlob.size > uploadLimit) {
+        alert(`O trecho ficou com ${formatBytes(clipBlob.size)}. O limite por upload e ${formatBytes(uploadLimit)}.`);
+        return;
+      }
+      const audioBase64 = await blobToBase64(clipBlob);
     if (saveAudioTrackBtn) {
       saveAudioTrackBtn.disabled = true;
       saveAudioTrackBtn.innerHTML = '<i class="fas fa-spinner animate-spin"></i> Salvando...';
@@ -2171,6 +2223,39 @@
     } catch (error) {
       console.error("Erro ao atualizar audio:", error);
       alert("Erro ao atualizar audio.");
+    }
+  }
+
+  async function deleteAudioTrackPermanently(track) {
+    if (!track?.id) return;
+    const confirmed = await confirmAction(
+      `Excluir definitivamente "${track.name}"? O arquivo sera removido do Supabase Storage se nao estiver em uso.`,
+      {
+        title: "Excluir audio definitivo",
+        confirmLabel: "Excluir definitivo",
+        cancelLabel: "Cancelar",
+      }
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await apiFetch(`${API_BASE}/audio-tracks/${track.id}/permanent`, {
+        method: "DELETE",
+      });
+      if (res.status === 409) {
+        const payload = await res.json().catch(() => ({}));
+        alert(`Este audio esta em uso em ${payload.usageCount || 1} horario(s). Remova dos horarios antes de excluir.`);
+        return;
+      }
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "delete-audio-track-error");
+        throw new Error(reason);
+      }
+      alert("Audio excluido definitivamente.");
+      await loadAudioTracks();
+    } catch (error) {
+      console.error("Erro ao excluir audio definitivo:", error);
+      alert("Erro ao excluir audio definitivamente.");
     }
   }
 

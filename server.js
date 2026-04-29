@@ -27,7 +27,9 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "audio-tracks";
 const AUDIO_CLIP_DURATION_SECONDS = 20;
-const AUDIO_UPLOAD_MAX_BYTES = Number(process.env.AUDIO_UPLOAD_MAX_BYTES) || 8 * 1024 * 1024;
+const AUDIO_UPLOAD_MAX_BYTES = Number(process.env.AUDIO_UPLOAD_MAX_BYTES) || 3 * 1024 * 1024;
+const AUDIO_STORAGE_SOFT_LIMIT_BYTES =
+  Number(process.env.AUDIO_STORAGE_SOFT_LIMIT_BYTES) || 800000000;
 
 const runtimeStats = {
   lastMonitoringSweepAt: null,
@@ -978,6 +980,27 @@ async function uploadAudioClipToSupabase(storagePath, buffer, contentType) {
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     const error = new Error(`supabase_upload_failed:${response.status}`);
+    error.detail = detail;
+    throw error;
+  }
+}
+
+async function deleteAudioClipFromSupabase(storagePath) {
+  assertSupabaseStorageConfigured();
+  const deleteUrl = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(SUPABASE_STORAGE_BUCKET)}`;
+  const response = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prefixes: [storagePath] }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    const error = new Error(`supabase_delete_failed:${response.status}`);
     error.detail = detail;
     throw error;
   }
@@ -3259,6 +3282,42 @@ app.get("/api/audio-tracks", authenticate, async (req, res) => {
   }
 });
 
+app.get(
+  "/api/audio-tracks/stats",
+  authenticate,
+  requirePermission("menus.audios"),
+  requirePermission("features.audio_manage"),
+  async (_req, res) => {
+    try {
+      const result = await pool.query(
+        `
+        SELECT
+          COUNT(*)::int AS total_tracks,
+          COUNT(*) FILTER (WHERE active = TRUE)::int AS active_tracks,
+          COALESCE(SUM(size_bytes), 0)::bigint AS total_size_bytes,
+          COALESCE(SUM(size_bytes) FILTER (WHERE active = TRUE), 0)::bigint AS active_size_bytes
+        FROM audio_tracks
+        `
+      );
+      const row = result.rows[0] || {};
+      const totalSizeBytes = Number(row.total_size_bytes) || 0;
+      res.json({
+        totalTracks: Number(row.total_tracks) || 0,
+        activeTracks: Number(row.active_tracks) || 0,
+        totalSizeBytes,
+        activeSizeBytes: Number(row.active_size_bytes) || 0,
+        softLimitBytes: AUDIO_STORAGE_SOFT_LIMIT_BYTES,
+        warningThresholdBytes: Math.floor(AUDIO_STORAGE_SOFT_LIMIT_BYTES * 0.8),
+        warning: totalSizeBytes >= AUDIO_STORAGE_SOFT_LIMIT_BYTES * 0.8,
+        uploadMaxBytes: AUDIO_UPLOAD_MAX_BYTES,
+      });
+    } catch (error) {
+      console.error("GET /api/audio-tracks/stats error:", error);
+      sendInternalError(res, "failed_to_get_audio_track_stats", error);
+    }
+  }
+);
+
 app.post(
   "/api/audio-tracks",
   authenticate,
@@ -3450,6 +3509,86 @@ app.delete(
     } catch (error) {
       console.error("DELETE /api/audio-tracks/:id error:", error);
       sendInternalError(res, "failed_to_deactivate_audio_track", error);
+    }
+  }
+);
+
+app.delete(
+  "/api/audio-tracks/:id/permanent",
+  authenticate,
+  requirePermission("menus.audios"),
+  requirePermission("features.audio_manage"),
+  requireWriteAccess,
+  async (req, res) => {
+    const audioTrackId = toIntId(req.params.id);
+    if (!audioTrackId) return res.status(400).json({ error: "invalid_audio_track_id" });
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const trackResult = await client.query(
+        `
+        SELECT id, name, storage_path, public_url, mime_type, size_bytes,
+               duration_seconds, active, created_by, created_at, updated_at
+        FROM audio_tracks
+        WHERE id = $1
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [audioTrackId]
+      );
+      if (!trackResult.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "audio_track_not_found" });
+      }
+
+      const track = trackResult.rows[0];
+      const usageResult = await client.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM schedules
+        WHERE music = $1
+        `,
+        [track.public_url]
+      );
+      const usageCount = Number(usageResult.rows[0]?.total) || 0;
+      if (usageCount > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          error: "audio_track_in_use",
+          usageCount,
+        });
+      }
+
+      await client.query("DELETE FROM audio_tracks WHERE id = $1", [audioTrackId]);
+      await client.query("COMMIT");
+
+      try {
+        await deleteAudioClipFromSupabase(track.storage_path);
+      } catch (storageError) {
+        console.error("Supabase audio delete error:", storageError);
+      }
+
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.user.schoolId || null,
+        action: "delete_audio_track_permanent",
+        resource: "audio_track",
+        resourceId: String(audioTrackId),
+        beforeData: mapAudioTrack(track),
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("DELETE /api/audio-tracks/:id/permanent error:", error);
+      sendInternalError(res, "failed_to_delete_audio_track_permanently", error);
+    } finally {
+      client.release();
     }
   }
 );
