@@ -15,6 +15,7 @@
     features: [
       "dashboard_manual_section",
       "dashboard_manual_play",
+      "dashboard_signal_audio",
       "dashboard_last_signal",
       "dashboard_next_signal",
       "dashboard_schedule_interface",
@@ -23,6 +24,8 @@
       "dashboard_schools_without_schedule",
       "dashboard_monitor_alerts",
       "dashboard_operational_history",
+      "dashboard_http_metrics_view",
+      "dashboard_http_metrics_filters",
       "config_schedule_write",
       "config_approve_changes",
       "config_auto_approve_changes",
@@ -49,6 +52,7 @@
       features: {
         dashboard_manual_section: true,
         dashboard_manual_play: false,
+        dashboard_signal_audio: true,
         dashboard_last_signal: true,
         dashboard_next_signal: true,
         dashboard_schedule_interface: true,
@@ -57,6 +61,8 @@
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
         dashboard_operational_history: true,
+        dashboard_http_metrics_view: true,
+        dashboard_http_metrics_filters: true,
         config_schedule_write: true,
         config_approve_changes: true,
         config_auto_approve_changes: true,
@@ -82,6 +88,7 @@
       features: {
         dashboard_manual_section: true,
         dashboard_manual_play: true,
+        dashboard_signal_audio: true,
         dashboard_last_signal: true,
         dashboard_next_signal: true,
         dashboard_schedule_interface: true,
@@ -90,6 +97,8 @@
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
         dashboard_operational_history: false,
+        dashboard_http_metrics_view: false,
+        dashboard_http_metrics_filters: false,
         config_schedule_write: true,
         config_approve_changes: false,
         config_auto_approve_changes: false,
@@ -115,6 +124,7 @@
       features: {
         dashboard_manual_section: true,
         dashboard_manual_play: true,
+        dashboard_signal_audio: true,
         dashboard_last_signal: true,
         dashboard_next_signal: true,
         dashboard_schedule_interface: true,
@@ -123,6 +133,8 @@
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
         dashboard_operational_history: false,
+        dashboard_http_metrics_view: false,
+        dashboard_http_metrics_filters: false,
         config_schedule_write: false,
         config_approve_changes: false,
         config_auto_approve_changes: false,
@@ -149,6 +161,7 @@
     features: {
       dashboard_manual_section: "Dashboard: visualizar acionamento manual",
       dashboard_manual_play: "Dashboard: tocar audio manual",
+      dashboard_signal_audio: "Dashboard: reproduzir audio dos sinais",
       dashboard_last_signal: "Dashboard: visualizar ultimo sinal",
       dashboard_next_signal: "Dashboard: visualizar proximo sinal",
       dashboard_schedule_interface: "Dashboard: visualizar interface de horarios",
@@ -157,6 +170,8 @@
       dashboard_schools_without_schedule: "Dashboard: escolas sem horario",
       dashboard_monitor_alerts: "Dashboard: lista de alertas de monitoramento",
       dashboard_operational_history: "Dashboard: grafico operacional",
+      dashboard_http_metrics_view: "Dashboard: visualizar observabilidade HTTP",
+      dashboard_http_metrics_filters: "Dashboard: filtrar observabilidade HTTP",
       config_schedule_write: "Config: editar horarios",
       config_approve_changes: "Config: aprovar mudancas de horario",
       config_auto_approve_changes: "Config: autoaprovar mudancas de horario",
@@ -177,6 +192,7 @@
       features: [
         "dashboard_manual_section",
         "dashboard_manual_play",
+        "dashboard_signal_audio",
         "dashboard_last_signal",
         "dashboard_next_signal",
         "dashboard_schedule_interface",
@@ -185,6 +201,8 @@
         "dashboard_schools_without_schedule",
         "dashboard_monitor_alerts",
         "dashboard_operational_history",
+        "dashboard_http_metrics_view",
+        "dashboard_http_metrics_filters",
       ],
     },
     {
@@ -207,45 +225,8 @@
     { menu: "audit", features: ["audit_view"] },
   ];
   const USER_PERMISSION_PRESETS = {
-    coordenacao: {
-      label: "Coordenacao",
-      role: ROLE_ADMIN_ESCOLA,
-      permissions: {
-        menus: {
-          dashboard: true,
-          config: true,
-          schools: false,
-          users: false,
-          audit: true,
-        },
-        features: {
-          dashboard_manual_section: true,
-          dashboard_manual_play: false,
-          dashboard_last_signal: true,
-          dashboard_next_signal: true,
-          dashboard_schedule_interface: true,
-          dashboard_database_status: true,
-          dashboard_open_alerts: true,
-          dashboard_schools_without_schedule: true,
-          dashboard_monitor_alerts: true,
-          dashboard_operational_history: false,
-          config_schedule_write: true,
-          config_approve_changes: false,
-          config_auto_approve_changes: false,
-          config_templates: true,
-          config_backup_export: true,
-          config_backup_import: false,
-          config_backup_restore: false,
-          users_create: false,
-          users_edit: false,
-          users_disable: false,
-          users_reset_password: false,
-          audit_view: true,
-        },
-      },
-    },
-    portaria: {
-      label: "Portaria",
+    sinais: {
+      label: "Sinais (Visualizacao + Audio)",
       role: ROLE_SOMENTE_LEITURA,
       permissions: {
         menus: {
@@ -258,14 +239,17 @@
         features: {
           dashboard_manual_section: true,
           dashboard_manual_play: true,
+          dashboard_signal_audio: true,
           dashboard_last_signal: true,
           dashboard_next_signal: true,
           dashboard_schedule_interface: true,
-          dashboard_database_status: true,
-          dashboard_open_alerts: true,
-          dashboard_schools_without_schedule: true,
-          dashboard_monitor_alerts: true,
+          dashboard_database_status: false,
+          dashboard_open_alerts: false,
+          dashboard_schools_without_schedule: false,
+          dashboard_monitor_alerts: false,
           dashboard_operational_history: false,
+          dashboard_http_metrics_view: false,
+          dashboard_http_metrics_filters: false,
           config_schedule_write: false,
           config_approve_changes: false,
           config_auto_approve_changes: false,
@@ -281,20 +265,21 @@
         },
       },
     },
-    secretaria: {
-      label: "Secretaria",
+    ti: {
+      label: "TI (Horarios + Usuarios da Escola)",
       role: ROLE_ADMIN_ESCOLA,
       permissions: {
         menus: {
           dashboard: true,
           config: true,
           schools: false,
-          users: false,
+          users: true,
           audit: true,
         },
         features: {
-          dashboard_manual_section: false,
-          dashboard_manual_play: false,
+          dashboard_manual_section: true,
+          dashboard_manual_play: true,
+          dashboard_signal_audio: true,
           dashboard_last_signal: true,
           dashboard_next_signal: true,
           dashboard_schedule_interface: true,
@@ -303,17 +288,59 @@
           dashboard_schools_without_schedule: true,
           dashboard_monitor_alerts: true,
           dashboard_operational_history: false,
+          dashboard_http_metrics_view: true,
+          dashboard_http_metrics_filters: false,
           config_schedule_write: true,
-          config_approve_changes: false,
-          config_auto_approve_changes: false,
-          config_templates: false,
+          config_approve_changes: true,
+          config_auto_approve_changes: true,
+          config_templates: true,
           config_backup_export: true,
           config_backup_import: true,
-          config_backup_restore: false,
-          users_create: false,
-          users_edit: false,
-          users_disable: false,
+          config_backup_restore: true,
+          users_create: true,
+          users_edit: true,
+          users_disable: true,
           users_reset_password: false,
+          audit_view: true,
+        },
+      },
+    },
+    admin_super: {
+      label: "Admin Super (Tudo Liberado)",
+      role: ROLE_SUPERADMIN,
+      permissions: {
+        menus: {
+          dashboard: true,
+          config: true,
+          schools: true,
+          users: true,
+          audit: true,
+        },
+        features: {
+          dashboard_manual_section: true,
+          dashboard_manual_play: true,
+          dashboard_signal_audio: true,
+          dashboard_last_signal: true,
+          dashboard_next_signal: true,
+          dashboard_schedule_interface: true,
+          dashboard_database_status: true,
+          dashboard_open_alerts: true,
+          dashboard_schools_without_schedule: true,
+          dashboard_monitor_alerts: true,
+          dashboard_operational_history: true,
+          dashboard_http_metrics_view: true,
+          dashboard_http_metrics_filters: true,
+          config_schedule_write: true,
+          config_approve_changes: true,
+          config_auto_approve_changes: true,
+          config_templates: true,
+          config_backup_export: true,
+          config_backup_import: true,
+          config_backup_restore: true,
+          users_create: true,
+          users_edit: true,
+          users_disable: true,
+          users_reset_password: true,
           audit_view: true,
         },
       },
@@ -341,6 +368,9 @@
   const auditSection = document.getElementById("auditSection");
   const pageEyebrow = document.getElementById("pageEyebrow");
   const pageTitle = document.getElementById("pageTitle");
+  const pageTitleBlock = document.getElementById("pageTitleBlock");
+  const bellIcon = document.getElementById("bellIcon");
+  const countdownBadge = document.getElementById("countdownBadge");
   const sidebar = document.getElementById("sidebar");
   const dashboardManualCard = document.getElementById("dashboardManualCard");
   const dashboardLastSignalCard = document.getElementById("dashboardLastSignalCard");
@@ -362,6 +392,16 @@
   const dashboardLastSweeps = document.getElementById("dashboardLastSweeps");
   const dashboardPlaybackFailures = document.getElementById("dashboardPlaybackFailures");
   const dashboardPendingApprovals = document.getElementById("dashboardPendingApprovals");
+  const dashboardHttpMetricsCard = document.getElementById("dashboardHttpMetricsCard");
+  const refreshHttpMetricsBtn = document.getElementById("refreshHttpMetricsBtn");
+  const dashboardHttpMethodFilter = document.getElementById("dashboardHttpMethodFilter");
+  const dashboardHttpWindowFilter = document.getElementById("dashboardHttpWindowFilter");
+  const dashboardHttpTopNFilter = document.getElementById("dashboardHttpTopNFilter");
+  const dashboardHttpTotalRequests = document.getElementById("dashboardHttpTotalRequests");
+  const dashboardHttpTotalErrors = document.getElementById("dashboardHttpTotalErrors");
+  const dashboardHttpTopEndpoint = document.getElementById("dashboardHttpTopEndpoint");
+  const dashboardHttpLastSeen = document.getElementById("dashboardHttpLastSeen");
+  const dashboardHttpMetricsBody = document.getElementById("dashboardHttpMetricsBody");
   const dashboardOperationalHistoryCard = document.getElementById("dashboardOperationalHistoryCard");
   const dashboardOperationalSchoolFilter = document.getElementById("dashboardOperationalSchoolFilter");
   const dashboardOperationalDays = document.getElementById("dashboardOperationalDays");
@@ -491,6 +531,38 @@
   let backupSnapshots = [];
   let pendingScheduleRequests = [];
   let currentUser = null;
+  const feedbackUI = window.feedbackUI || {};
+  const STRONG_PASSWORD_HINT =
+    "A senha deve ter no minimo 10 caracteres com letra maiuscula, minuscula, numero e simbolo.";
+  const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/;
+
+  function isStrongPassword(value) {
+    const password = String(value || "");
+    return password.length >= 10 && STRONG_PASSWORD_REGEX.test(password);
+  }
+
+  function alert(message) {
+    if (typeof feedbackUI.alert === "function") {
+      feedbackUI.alert(message);
+      return;
+    }
+    window.alert(message);
+  }
+
+  async function confirmAction(message, options = {}) {
+    if (typeof feedbackUI.confirm === "function") {
+      return feedbackUI.confirm(message, options);
+    }
+    return window.confirm(String(message || ""));
+  }
+
+  async function promptAction(message, options = {}) {
+    if (typeof feedbackUI.prompt === "function") {
+      return feedbackUI.prompt(message, options);
+    }
+    const fallback = window.prompt(String(message || ""));
+    return fallback === null ? null : String(fallback || "").trim();
+  }
 
   function formatRoleLabel(role) {
     const labels = {
@@ -553,8 +625,16 @@
     return canAccessDashboardMenu() && hasPermission("features.dashboard_manual_section");
   }
 
+  function canUseDashboardSignalAudio() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_signal_audio");
+  }
+
   function canPlayDashboardManualAudio() {
-    return canViewDashboardManualSection() && hasPermission("features.dashboard_manual_play");
+    return (
+      canViewDashboardManualSection() &&
+      canUseDashboardSignalAudio() &&
+      hasPermission("features.dashboard_manual_play")
+    );
   }
 
   function canViewDashboardLastSignal() {
@@ -587,6 +667,14 @@
 
   function canViewDashboardOperationalHistory() {
     return canAccessDashboardMenu() && hasPermission("features.dashboard_operational_history");
+  }
+
+  function canViewDashboardHttpMetrics() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_http_metrics_view");
+  }
+
+  function canFilterDashboardHttpMetrics() {
+    return canViewDashboardHttpMetrics() && hasPermission("features.dashboard_http_metrics_filters");
   }
 
   function canUseTemplates() {
@@ -999,6 +1087,19 @@
     if (pageTitle) pageTitle.textContent = text;
   }
 
+  function applySuperadminDashboardHeaderVisibility(isDashboardActive) {
+    const hideDashboardHeader = Boolean(isDashboardActive && isSuperAdmin());
+    if (countdownBadge) {
+      countdownBadge.classList.toggle("hidden", hideDashboardHeader);
+    }
+    if (bellIcon) {
+      bellIcon.classList.toggle("hidden", hideDashboardHeader);
+    }
+    if (pageTitleBlock) {
+      pageTitleBlock.classList.toggle("hidden", hideDashboardHeader);
+    }
+  }
+
   function switchSection(target) {
     if (target === "dashboard" && !canAccessDashboardMenu()) target = "config";
     if (target === "config" && !canAccessConfigMenu()) target = "dashboard";
@@ -1054,6 +1155,8 @@
       loadAuditLogs();
     }
 
+    applySuperadminDashboardHeaderVisibility(showDashboard);
+
     closeSidebarOnMobile();
   }
 
@@ -1103,6 +1206,9 @@
     if (dashboardOperationalHistoryCard) {
       dashboardOperationalHistoryCard.classList.toggle("hidden", !canViewDashboardOperationalHistory());
     }
+    if (dashboardHttpMetricsCard) {
+      dashboardHttpMetricsCard.classList.toggle("hidden", !canViewDashboardHttpMetrics());
+    }
 
     if (schoolBtn) {
       schoolBtn.disabled = !canAccessSchoolsMenu();
@@ -1146,6 +1252,21 @@
     if (dashboardOperationalDays) {
       dashboardOperationalDays.disabled = !canViewDashboardOperationalHistory();
     }
+    if (refreshHttpMetricsBtn) {
+      refreshHttpMetricsBtn.disabled = !canViewDashboardHttpMetrics();
+    }
+    if (dashboardHttpMethodFilter) {
+      dashboardHttpMethodFilter.disabled = !canFilterDashboardHttpMetrics();
+    }
+    if (dashboardHttpWindowFilter) {
+      dashboardHttpWindowFilter.disabled = !canFilterDashboardHttpMetrics();
+    }
+    if (dashboardHttpTopNFilter) {
+      dashboardHttpTopNFilter.disabled = !canFilterDashboardHttpMetrics();
+    }
+
+    const isDashboardActive = Boolean(dashboardSection && !dashboardSection.classList.contains("hidden"));
+    applySuperadminDashboardHeaderVisibility(isDashboardActive);
   }
 
   function updateConfigClock() {
@@ -1544,7 +1665,13 @@
   async function deleteSchool(school) {
     if (!canAccessSchoolsMenu()) return;
     if (!school?.id) return;
-    if (!confirm(`Excluir a escola "${school.name}"? Ela ficara inativa.`)) return;
+    if (!(await confirmAction(`Excluir a escola "${school.name}"? Ela ficara inativa.`, {
+      title: "Excluir escola",
+      danger: true,
+      confirmText: "Excluir",
+    }))) {
+      return;
+    }
 
     try {
       const res = await apiFetch(`${SCHOOLS_API_URL}/${school.id}`, { method: "DELETE" });
@@ -1629,6 +1756,7 @@
     const current = userPresetSelect.value || "";
     userPresetSelect.innerHTML = `<option value="">Preset de permissao</option>`;
     Object.entries(USER_PERMISSION_PRESETS).forEach(([key, preset]) => {
+      if (!isSuperAdmin() && preset.role === ROLE_SUPERADMIN) return;
       const option = document.createElement("option");
       option.value = key;
       option.textContent = preset.label;
@@ -1653,6 +1781,11 @@
 
     const nextRole = preset.role || ROLE_ADMIN_ESCOLA;
     if (userRoleInput) {
+      const allowedRoles = Array.from(userRoleInput.options).map((option) => option.value);
+      if (!allowedRoles.includes(nextRole)) {
+        alert("Seu perfil nao pode aplicar este preset de role.");
+        return;
+      }
       userRoleInput.value = nextRole;
     }
 
@@ -1727,10 +1860,18 @@
     const normalizedSelected = normalizePermissionsPayload(selectedPermissions || {});
     userPermissionsGrid.innerHTML = "";
 
-    const buildPermissionRow = (section, key, labelText, defaultValue, selectedValue) => {
+    const buildPermissionRow = (
+      section,
+      key,
+      labelText,
+      defaultValue,
+      selectedValue,
+      compact = false
+    ) => {
       const row = document.createElement("div");
-      row.className =
-        "flex flex-col gap-2 rounded-lg border border-slate-200/80 bg-white/70 p-2 dark:border-slate-700/80 dark:bg-slate-900/40 md:flex-row md:items-center md:justify-between";
+      row.className = compact
+        ? "flex flex-col gap-2 rounded-lg border border-slate-200/70 bg-white/80 p-2 dark:border-slate-700/80 dark:bg-slate-900/30 md:flex-row md:items-center md:justify-between"
+        : "flex flex-col gap-2 rounded-lg border border-slate-200/80 bg-white/70 p-2 dark:border-slate-700/80 dark:bg-slate-900/40 md:flex-row md:items-center md:justify-between";
 
       const label = document.createElement("span");
       label.className = "text-xs";
@@ -1767,8 +1908,18 @@
 
       row.appendChild(label);
       row.appendChild(select);
-      return row;
+      return { row, select };
     };
+
+    const resolvePermissionSelectValue = (select) => {
+      if (!select) return false;
+      if (select.value === "allow") return true;
+      if (select.value === "deny") return false;
+      return select.dataset.default === "true";
+    };
+
+    const menuSelectByKey = new Map();
+    const featureGroupUiByMenu = new Map();
 
     const menuWrapper = document.createElement("div");
     menuWrapper.className =
@@ -1784,15 +1935,17 @@
       const selectedValue = hasOwn(normalizedSelected.menus, menuKey)
         ? Boolean(normalizedSelected.menus[menuKey])
         : null;
-      menuList.appendChild(
-        buildPermissionRow(
-          "menus",
-          menuKey,
-          PERMISSION_LABELS.menus[menuKey] || menuKey,
-          Boolean(defaultsForRole.menus[menuKey]),
-          selectedValue
-        )
+      const { row, select } = buildPermissionRow(
+        "menus",
+        menuKey,
+        PERMISSION_LABELS.menus[menuKey] || menuKey,
+        Boolean(defaultsForRole.menus[menuKey]),
+        selectedValue
       );
+      row.dataset.menuKey = menuKey;
+      select.dataset.menuKey = menuKey;
+      menuSelectByKey.set(menuKey, select);
+      menuList.appendChild(row);
     });
     menuWrapper.appendChild(menuList);
     userPermissionsGrid.appendChild(menuWrapper);
@@ -1805,53 +1958,146 @@
       "mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
     featuresTitle.textContent = "Funcoes por Menu";
     featuresWrapper.appendChild(featuresTitle);
+    const featuresHint = document.createElement("p");
+    featuresHint.className = "mb-3 text-[11px] text-slate-500 dark:text-slate-400";
+    featuresHint.textContent =
+      "Use os blocos abaixo para abrir apenas os menus que voce quer configurar.";
+    featuresWrapper.appendChild(featuresHint);
     const featuresList = document.createElement("div");
     featuresList.className = "space-y-3";
 
     PERMISSION_MENU_GROUPS.forEach((group) => {
-      const groupBlock = document.createElement("div");
-      groupBlock.className = "rounded-lg border border-slate-200/80 p-2 dark:border-slate-700/80";
+      const groupBlock = document.createElement("details");
+      groupBlock.className =
+        "group overflow-hidden rounded-lg border border-slate-200/80 bg-slate-50/70 dark:border-slate-700/80 dark:bg-slate-900/40";
+      groupBlock.dataset.menuGroup = group.menu;
 
+      const summary = document.createElement("summary");
+      summary.className =
+        "flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5";
+
+      const summaryLabel = document.createElement("div");
       const groupTitle = document.createElement("p");
-      groupTitle.className = "mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+      groupTitle.className = "text-xs font-semibold text-slate-700 dark:text-slate-200";
       groupTitle.textContent = PERMISSION_LABELS.menus[group.menu] || group.menu;
-      groupBlock.appendChild(groupTitle);
+      const groupMeta = document.createElement("p");
+      groupMeta.className = "text-[11px] text-slate-500 dark:text-slate-400";
+      groupMeta.textContent = `${group.features.length} funcao(oes)`;
+      summaryLabel.appendChild(groupTitle);
+      summaryLabel.appendChild(groupMeta);
+
+      const summaryStatus = document.createElement("div");
+      summaryStatus.className = "flex items-center gap-2";
+      const statusBadge = document.createElement("span");
+      statusBadge.className =
+        "rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600";
+      const chevron = document.createElement("span");
+      chevron.className = "text-xs text-slate-400 transition-transform group-open:rotate-180";
+      chevron.textContent = "v";
+      summaryStatus.appendChild(statusBadge);
+      summaryStatus.appendChild(chevron);
+
+      summary.appendChild(summaryLabel);
+      summary.appendChild(summaryStatus);
+      groupBlock.appendChild(summary);
+
+      const groupContent = document.createElement("div");
+      groupContent.className = "border-t border-slate-200/70 px-3 pb-3 pt-2 dark:border-slate-700/70";
+      const groupHelper = document.createElement("p");
+      groupHelper.className = "mb-2 text-[11px] text-slate-500 dark:text-slate-400";
+      groupContent.appendChild(groupHelper);
 
       if (!group.features.length) {
         const text = document.createElement("p");
         text.className = "text-xs text-slate-500 dark:text-slate-400";
         text.textContent = "Sem funcoes extras neste menu.";
-        groupBlock.appendChild(text);
+        groupContent.appendChild(text);
+        groupBlock.appendChild(groupContent);
         featuresList.appendChild(groupBlock);
+        const selectedMenu = menuSelectByKey.get(group.menu);
+        if (selectedMenu) groupBlock.open = resolvePermissionSelectValue(selectedMenu);
+        featureGroupUiByMenu.set(group.menu, {
+          container: groupContent,
+          details: groupBlock,
+          helper: groupHelper,
+          statusBadge,
+          featureSelects: [],
+        });
         return;
       }
 
       const featureItems = document.createElement("div");
       featureItems.className = "space-y-2";
+      const featureSelects = [];
 
       group.features.forEach((featureKey) => {
         const selectedValue = hasOwn(normalizedSelected.features, featureKey)
           ? Boolean(normalizedSelected.features[featureKey])
           : null;
-        featureItems.appendChild(
-          buildPermissionRow(
-            "features",
-            featureKey,
-            PERMISSION_LABELS.features[featureKey] || featureKey,
-            Boolean(defaultsForRole.features[featureKey]),
-            selectedValue
-          )
+        const { row, select } = buildPermissionRow(
+          "features",
+          featureKey,
+          PERMISSION_LABELS.features[featureKey] || featureKey,
+          Boolean(defaultsForRole.features[featureKey]),
+          selectedValue,
+          true
         );
+        featureSelects.push(select);
+        featureItems.appendChild(row);
       });
 
-      groupBlock.appendChild(featureItems);
+      const hasCustomFeatureOverride = featureSelects.some((select) => select.value !== "inherit");
+      const selectedMenu = menuSelectByKey.get(group.menu);
+      if (selectedMenu) {
+        groupBlock.open = resolvePermissionSelectValue(selectedMenu) || hasCustomFeatureOverride;
+      } else {
+        groupBlock.open = hasCustomFeatureOverride;
+      }
+
+      groupContent.appendChild(featureItems);
+      groupBlock.appendChild(groupContent);
       featuresList.appendChild(groupBlock);
+      featureGroupUiByMenu.set(group.menu, {
+        container: featureItems,
+        details: groupBlock,
+        helper: groupHelper,
+        statusBadge,
+        featureSelects,
+      });
     });
+
+    const syncFeatureGroupState = (menuKey) => {
+      const select = menuSelectByKey.get(menuKey);
+      const groupUi = featureGroupUiByMenu.get(menuKey);
+      if (!select || !groupUi) return;
+
+      const isMenuEnabled = resolvePermissionSelectValue(select);
+      const hasCustomFeatureOverride = groupUi.featureSelects.some(
+        (featureSelect) => featureSelect.value !== "inherit"
+      );
+
+      groupUi.statusBadge.textContent = isMenuEnabled ? "Ativo" : "Inativo";
+      groupUi.statusBadge.className = isMenuEnabled
+        ? "rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+        : "rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-700 dark:text-slate-200";
+      groupUi.helper.textContent = isMenuEnabled
+        ? "Defina quais funcoes ficam ativas neste menu."
+        : "Menu inativo. As funcoes abaixo so passam a valer quando o menu estiver ativo.";
+      groupUi.container.classList.toggle("opacity-70", !isMenuEnabled);
+      groupUi.container.classList.toggle("transition-opacity", true);
+
+      if (isMenuEnabled && !groupUi.details.open) {
+        groupUi.details.open = true;
+      } else if (!isMenuEnabled && !hasCustomFeatureOverride) {
+        groupUi.details.open = false;
+      }
+    };
 
     featuresWrapper.appendChild(featuresList);
     userPermissionsGrid.appendChild(featuresWrapper);
 
     const onPermissionsChanged = () => {
+      PERMISSION_KEYS.menus.forEach((menuKey) => syncFeatureGroupState(menuKey));
       renderEffectivePermissionsPreview(role);
     };
 
@@ -1859,6 +2105,7 @@
       .querySelectorAll('select[data-perm-mode="true"]')
       .forEach((input) => input.addEventListener("change", onPermissionsChanged));
 
+    PERMISSION_KEYS.menus.forEach((menuKey) => syncFeatureGroupState(menuKey));
     renderEffectivePermissionsPreview(role);
   }
 
@@ -2166,8 +2413,8 @@
       return;
     }
 
-    if (!editId && password.length < 6) {
-      alert("A senha deve ter pelo menos 6 caracteres.");
+    if (!editId && !isStrongPassword(password)) {
+      alert(STRONG_PASSWORD_HINT);
       return;
     }
 
@@ -2230,7 +2477,13 @@
 
     const nextActive = user.active === false;
     const actionLabel = nextActive ? "reativar" : "desativar";
-    if (!confirm(`Deseja ${actionLabel} o usuario "${user.name}"?`)) return;
+    if (!(await confirmAction(`Deseja ${actionLabel} o usuario "${user.name}"?`, {
+      title: "Confirmar usuario",
+      danger: !nextActive,
+      confirmText: nextActive ? "Reativar" : "Desativar",
+    }))) {
+      return;
+    }
 
     try {
       const endpoint = nextActive
@@ -2259,10 +2512,15 @@
 
   async function resetUserPassword(user) {
     if (!isSuperAdmin() || !user?.id) return;
-    const newPassword = prompt(`Nova senha para "${user.name}":`);
+    const newPassword = await promptAction(`Nova senha para "${user.name}":`, {
+      title: "Resetar senha de usuario",
+      inputType: "password",
+      placeholder: "Digite a nova senha",
+      confirmText: "Salvar senha",
+    });
     if (!newPassword) return;
-    if (newPassword.length < 6) {
-      alert("A senha deve ter pelo menos 6 caracteres.");
+    if (!isStrongPassword(newPassword)) {
+      alert(STRONG_PASSWORD_HINT);
       return;
     }
 
@@ -2294,10 +2552,14 @@
     }
 
     if (
-      !confirm(
+      !(await confirmAction(
         `Simular login como "${user.name || user.email}"?\n\n` +
-          "Voce podera sair da simulacao a qualquer momento."
-      )
+          "Voce podera sair da simulacao a qualquer momento.",
+        {
+          title: "Confirmar simulacao",
+          confirmText: "Iniciar simulacao",
+        }
+      ))
     ) {
       return;
     }
@@ -2441,11 +2703,14 @@
       const preview = await previewRes.json();
       const summary = summarizeSchedule(preview.schedule);
 
-      if (
-        !confirm(
-          `Restaurar este backup?\n\n${formatScheduleSummary(summary)}\n\nIsso vai substituir os horarios atuais.`
-        )
-      ) {
+      if (!(await confirmAction(
+        `Restaurar este backup?\n\n${formatScheduleSummary(summary)}\n\nIsso vai substituir os horarios atuais.`,
+        {
+          title: "Restaurar backup",
+          danger: true,
+          confirmText: "Restaurar",
+        }
+      ))) {
         return;
       }
 
@@ -2620,8 +2885,8 @@
       alert("Preencha todos os campos.");
       return;
     }
-    if (newPassword.length < 6) {
-      alert("A nova senha deve ter pelo menos 6 caracteres.");
+    if (!isStrongPassword(newPassword)) {
+      alert(STRONG_PASSWORD_HINT);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -2799,8 +3064,9 @@
     const canSeeOpenAlerts = canViewDashboardOpenAlerts();
     const canSeeWithoutSchedule = canViewDashboardSchoolsWithoutSchedule();
     const canSeeMonitorAlerts = canViewDashboardMonitorAlerts();
+    const canSeeHttpMetrics = canViewDashboardHttpMetrics();
     const shouldFetchAlerts = canSeeOpenAlerts || canSeeMonitorAlerts;
-    const shouldFetchMonitor = canSeeWithoutSchedule;
+    const shouldFetchMonitor = canSeeWithoutSchedule || canSeeHttpMetrics;
 
     if (!canSeeDb) {
       dashboardDbStatus.textContent = "--";
@@ -2808,6 +3074,7 @@
       dashboardDbLatency.textContent = "Latencia: --";
       if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
       if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
+      resetDashboardHttpMetrics("Sem permissao para visualizar metricas HTTP.");
     } else {
       try {
         const healthRes = await fetch(`${API_BASE}/health`);
@@ -2829,6 +3096,9 @@
         dashboardDbLatency.textContent = "Latencia: --";
         if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
         if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
+        if (canSeeHttpMetrics) {
+          resetDashboardHttpMetrics("Sem dados enquanto o banco estiver indisponivel.");
+        }
       }
     }
 
@@ -2843,19 +3113,42 @@
       } else {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
       }
+      resetDashboardHttpMetrics("Faca login para visualizar metricas HTTP.");
       await loadDashboardOperationalHistory();
       return;
     }
 
     try {
-      const [monitorRes, alertsRes] = await Promise.all([
+      const methodFilter = canFilterDashboardHttpMetrics()
+        ? String(dashboardHttpMethodFilter?.value || "ALL").toUpperCase()
+        : "ALL";
+      const windowMinutesFilter = canFilterDashboardHttpMetrics()
+        ? Number.parseInt(String(dashboardHttpWindowFilter?.value || "60"), 10)
+        : 60;
+      const topNFilter = canFilterDashboardHttpMetrics()
+        ? Number.parseInt(String(dashboardHttpTopNFilter?.value || "10"), 10)
+        : 10;
+      const httpMetricsParams = new URLSearchParams();
+      httpMetricsParams.set("method", methodFilter);
+      httpMetricsParams.set("windowMinutes", String(windowMinutesFilter));
+      httpMetricsParams.set("topN", String(topNFilter));
+
+      const [monitorRes, alertsRes, httpMetricsRes] = await Promise.all([
         shouldFetchMonitor ? apiFetch(`${API_BASE}/monitor/status`) : Promise.resolve(null),
         shouldFetchAlerts ? apiFetch(`${API_BASE}/alerts?status=open`) : Promise.resolve(null),
+        canSeeHttpMetrics
+          ? apiFetch(`${API_BASE}/monitor/http-metrics?${httpMetricsParams.toString()}`)
+          : Promise.resolve(null),
       ]);
 
       let monitorPayload = null;
       if (monitorRes && monitorRes.ok) {
         monitorPayload = await monitorRes.json();
+      }
+
+      let httpMetricsPayload = null;
+      if (httpMetricsRes && httpMetricsRes.ok) {
+        httpMetricsPayload = await httpMetricsRes.json();
       }
 
       let alerts = [];
@@ -2925,6 +3218,18 @@
         dashboardLastSweeps.textContent = `Ultimas execucoes: monitor ${monitorAt} | backup ${backupAt}`;
       }
 
+      if (canSeeHttpMetrics) {
+        if (httpMetricsPayload?.metrics) {
+          renderDashboardHttpMetrics(httpMetricsPayload.metrics, "endpoint");
+        } else if (monitorPayload?.runtime?.httpMetrics) {
+          renderDashboardHttpMetrics(monitorPayload.runtime.httpMetrics, "monitor");
+        } else {
+          resetDashboardHttpMetrics("Metricas HTTP indisponiveis no momento.");
+        }
+      } else {
+        resetDashboardHttpMetrics("Sem permissao para visualizar metricas HTTP.");
+      }
+
       if (!canSeeMonitorAlerts) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
         await loadDashboardOperationalHistory();
@@ -2982,6 +3287,11 @@
       if (dashboardPendingApprovals) dashboardPendingApprovals.textContent = "Aprovacoes pendentes: --";
       if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
       if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
+      if (canSeeHttpMetrics) {
+        resetDashboardHttpMetrics("Erro ao carregar metricas HTTP.");
+      } else {
+        resetDashboardHttpMetrics("Sem permissao para visualizar metricas HTTP.");
+      }
       if (canSeeMonitorAlerts) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-rose-100 px-3 py-2 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Erro ao carregar alertas.</li>`;
       } else {
@@ -2989,6 +3299,78 @@
       }
       await loadDashboardOperationalHistory();
     }
+  }
+
+  function resetDashboardHttpMetrics(message = "Carregando metricas HTTP...") {
+    if (dashboardHttpTotalRequests) dashboardHttpTotalRequests.textContent = "--";
+    if (dashboardHttpTotalErrors) dashboardHttpTotalErrors.textContent = "--";
+    if (dashboardHttpTopEndpoint) dashboardHttpTopEndpoint.textContent = "--";
+    if (dashboardHttpLastSeen) dashboardHttpLastSeen.textContent = "Ultima coleta: --";
+    if (dashboardHttpMetricsBody) {
+      dashboardHttpMetricsBody.innerHTML = `
+        <tr>
+          <td colspan="7" class="py-3 text-slate-500 dark:text-slate-400">${message}</td>
+        </tr>
+      `;
+    }
+  }
+
+  function renderDashboardHttpMetrics(payload, sourceLabel = "monitor") {
+    const metrics = payload?.metrics || payload || {};
+    const endpoints = Array.isArray(metrics.endpoints) ? metrics.endpoints : [];
+    const scope = metrics.scope && typeof metrics.scope === "object" ? metrics.scope : {};
+
+    if (dashboardHttpTotalRequests) {
+      dashboardHttpTotalRequests.textContent = Number.isFinite(metrics.totalRequests)
+        ? String(metrics.totalRequests)
+        : "--";
+    }
+    if (dashboardHttpTotalErrors) {
+      dashboardHttpTotalErrors.textContent = Number.isFinite(metrics.totalErrors)
+        ? String(metrics.totalErrors)
+        : "--";
+    }
+
+    const first = endpoints[0] || null;
+    if (dashboardHttpTopEndpoint) {
+      dashboardHttpTopEndpoint.textContent = first
+        ? `${first.endpoint} (${first.requests} req)`
+        : "Sem dados";
+    }
+    if (dashboardHttpLastSeen) {
+      const lastSeen = first?.lastSeenAt ? new Date(first.lastSeenAt).toLocaleString("pt-BR") : "--";
+      const scopeText = `janela: ${scope.windowMinutes || "--"} min | metodo: ${scope.method || "ALL"} | top: ${scope.topN || endpoints.length || "--"}`;
+      dashboardHttpLastSeen.textContent = `Ultima coleta: ${lastSeen} | fonte: ${sourceLabel} | ${scopeText}`;
+    }
+
+    if (!dashboardHttpMetricsBody) return;
+    if (!endpoints.length) {
+      dashboardHttpMetricsBody.innerHTML = `
+        <tr>
+          <td colspan="7" class="py-3 text-slate-500 dark:text-slate-400">Sem endpoints registrados.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    dashboardHttpMetricsBody.innerHTML = "";
+    endpoints.forEach((item) => {
+      const tr = document.createElement("tr");
+      tr.className = "border-b border-slate-200/70 dark:border-slate-800/70";
+      const errorRate = Number.isFinite(item.errorRate) ? `${(item.errorRate * 100).toFixed(2)}%` : "--";
+      const latencyAvg = Number.isFinite(item.latencyAvgMs) ? `${item.latencyAvgMs} ms` : "--";
+      const latencyMax = Number.isFinite(item.latencyMaxMs) ? `${item.latencyMaxMs} ms` : "--";
+      tr.innerHTML = `
+        <td class="py-2 pr-3 font-semibold text-slate-700 dark:text-slate-200">${item.endpoint || "-"}</td>
+        <td class="py-2 pr-3">${item.requests ?? "--"}</td>
+        <td class="py-2 pr-3">${item.errors ?? "--"}</td>
+        <td class="py-2 pr-3">${errorRate}</td>
+        <td class="py-2 pr-3">${latencyAvg}</td>
+        <td class="py-2 pr-3">${latencyMax}</td>
+        <td class="py-2 pr-3">${item.lastStatusCode ?? "--"}</td>
+      `;
+      dashboardHttpMetricsBody.appendChild(tr);
+    });
   }
 
   async function fetchScheduleBySchoolId(schoolId) {
@@ -3221,7 +3603,12 @@
 
   async function approveScheduleChangeRequest(requestItem) {
     if (!requestItem?.id || !canApproveScheduleChanges()) return;
-    if (!confirm("Aprovar esta solicitacao e publicar os horarios?")) return;
+    if (!(await confirmAction("Aprovar esta solicitacao e publicar os horarios?", {
+      title: "Aprovar solicitacao",
+      confirmText: "Aprovar",
+    }))) {
+      return;
+    }
     try {
       const res = await apiFetch(`${API_BASE}/change-requests/${requestItem.id}/approve`, {
         method: "POST",
@@ -3246,7 +3633,12 @@
 
   async function rejectScheduleChangeRequest(requestItem) {
     if (!requestItem?.id || !canApproveScheduleChanges()) return;
-    const note = prompt("Motivo da rejeicao (opcional):", "");
+    const note = await promptAction("Motivo da rejeicao (opcional):", {
+      title: "Rejeitar solicitacao",
+      placeholder: "Descreva o motivo (opcional)",
+      confirmText: "Rejeitar",
+    });
+    if (note === null) return;
     try {
       const res = await apiFetch(`${API_BASE}/change-requests/${requestItem.id}/reject`, {
         method: "POST",
@@ -3270,7 +3662,13 @@
       alert("Seu perfil e somente leitura.");
       return;
     }
-    if (!confirm(`Remover o sinal das ${time}?`)) return;
+    if (!(await confirmAction(`Remover o sinal das ${time}?`, {
+      title: "Remover horario",
+      danger: true,
+      confirmText: "Remover",
+    }))) {
+      return;
+    }
 
     const schoolId = getCurrentSchoolId();
     if (!schoolId) {
@@ -3460,7 +3858,11 @@
       return;
     }
 
-    const templateName = prompt("Nome do template:");
+    const templateName = await promptAction("Nome do template:", {
+      title: "Salvar template",
+      placeholder: "Ex.: Grade Padrao Manha",
+      confirmText: "Salvar",
+    });
     if (!templateName) return;
 
     try {
@@ -3501,7 +3903,13 @@
       return;
     }
 
-    if (!confirm("Aplicar template? Isso vai substituir os horarios atuais da escola.")) return;
+    if (!(await confirmAction("Aplicar template? Isso vai substituir os horarios atuais da escola.", {
+      title: "Aplicar template",
+      danger: true,
+      confirmText: "Aplicar",
+    }))) {
+      return;
+    }
 
     try {
       const res = await apiFetch(`${API_BASE}/templates/${templateId}/clone-to-school`, {
@@ -3587,13 +3995,16 @@
         payload && typeof payload === "object" && payload.schedule ? payload.schedule : payload;
       const summary = summarizeSchedule(parsedSchedule);
 
-      if (
-        !confirm(
-          `Importar backup?\n\nPreview: ${formatScheduleSummary(
-            summary
-          )}\n\nOs horarios atuais da escola serao substituidos.`
-        )
-      ) {
+      if (!(await confirmAction(
+        `Importar backup?\n\nPreview: ${formatScheduleSummary(
+          summary
+        )}\n\nOs horarios atuais da escola serao substituidos.`,
+        {
+          title: "Importar backup",
+          danger: true,
+          confirmText: "Importar",
+        }
+      ))) {
         event.target.value = "";
         return;
       }
@@ -3806,6 +4217,16 @@
     refreshAuditBtn?.addEventListener("click", loadAuditLogs);
 
     refreshDashboardMonitorBtn?.addEventListener("click", loadDashboardMonitorInfo);
+    refreshHttpMetricsBtn?.addEventListener("click", loadDashboardMonitorInfo);
+    dashboardHttpMethodFilter?.addEventListener("change", () => {
+      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo();
+    });
+    dashboardHttpWindowFilter?.addEventListener("change", () => {
+      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo();
+    });
+    dashboardHttpTopNFilter?.addEventListener("change", () => {
+      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo();
+    });
 
     changePasswordBtn?.addEventListener("click", openChangePasswordModal);
     cancelChangePasswordBtn?.addEventListener("click", closeChangePasswordModal);

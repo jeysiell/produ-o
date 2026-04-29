@@ -1,6 +1,7 @@
 const express = require("express");
 const path = require("path");
 const dns = require("dns");
+const crypto = require("crypto");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
@@ -16,6 +17,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-change-this-secret";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
 const MONITOR_INTERVAL_MS = Number(process.env.MONITOR_INTERVAL_MS) || 300000;
 const DAILY_BACKUP_INTERVAL_MS = Number(process.env.DAILY_BACKUP_INTERVAL_MS) || 86400000;
+const AUDIT_LOG_RETENTION_DAYS = Number(process.env.AUDIT_LOG_RETENTION_DAYS) || 180;
 const DEFAULT_ADMIN_EMAIL = process.env.DEFAULT_ADMIN_EMAIL || "admin@sinaltech.local";
 const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123456";
 const DEFAULT_ADMIN_NAME = process.env.DEFAULT_ADMIN_NAME || "Super Admin";
@@ -27,7 +29,23 @@ const runtimeStats = {
   lastMonitoringSweepResult: null,
   lastDailyBackupSweepAt: null,
   lastDailyBackupSweepResult: null,
+  lastAuditRetentionSweepAt: null,
+  lastAuditRetentionSweepResult: null,
 };
+const httpMetrics = {
+  totalRequests: 0,
+  totalErrors: 0,
+  byEndpoint: new Map(),
+  recentEvents: [],
+};
+const HTTP_METRICS_MAX_EVENTS = Number(process.env.HTTP_METRICS_MAX_EVENTS) || 20000;
+const HTTP_METRICS_MAX_AGE_MS = Number(process.env.HTTP_METRICS_MAX_AGE_MS) || 24 * 60 * 60 * 1000;
+const loginRateLimitState = new Map();
+const LOGIN_RATE_LIMIT_WINDOW_MS = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = Number(process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS) || 8;
+const LOGIN_RATE_LIMIT_BLOCK_MS = Number(process.env.LOGIN_RATE_LIMIT_BLOCK_MS) || 20 * 60 * 1000;
+const PASSWORD_MIN_LENGTH = Number(process.env.PASSWORD_MIN_LENGTH) || 10;
+const PASSWORD_POLICY_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/;
 
 const ROLE_SUPERADMIN = "superadmin";
 const ROLE_ADMIN_ESCOLA = "admin_escola";
@@ -41,6 +59,7 @@ const PERMISSION_KEYS = {
   features: [
     "dashboard_manual_section",
     "dashboard_manual_play",
+    "dashboard_signal_audio",
     "dashboard_last_signal",
     "dashboard_next_signal",
     "dashboard_schedule_interface",
@@ -49,6 +68,8 @@ const PERMISSION_KEYS = {
     "dashboard_schools_without_schedule",
     "dashboard_monitor_alerts",
     "dashboard_operational_history",
+    "dashboard_http_metrics_view",
+    "dashboard_http_metrics_filters",
     "config_schedule_write",
     "config_approve_changes",
     "config_auto_approve_changes",
@@ -76,6 +97,7 @@ const ROLE_PERMISSION_DEFAULTS = {
     features: {
       dashboard_manual_section: true,
       dashboard_manual_play: false,
+      dashboard_signal_audio: true,
       dashboard_last_signal: true,
       dashboard_next_signal: true,
       dashboard_schedule_interface: true,
@@ -84,6 +106,8 @@ const ROLE_PERMISSION_DEFAULTS = {
       dashboard_schools_without_schedule: true,
       dashboard_monitor_alerts: true,
       dashboard_operational_history: true,
+      dashboard_http_metrics_view: true,
+      dashboard_http_metrics_filters: true,
       config_schedule_write: true,
       config_approve_changes: true,
       config_auto_approve_changes: true,
@@ -109,6 +133,7 @@ const ROLE_PERMISSION_DEFAULTS = {
     features: {
       dashboard_manual_section: true,
       dashboard_manual_play: true,
+      dashboard_signal_audio: true,
       dashboard_last_signal: true,
       dashboard_next_signal: true,
       dashboard_schedule_interface: true,
@@ -117,6 +142,8 @@ const ROLE_PERMISSION_DEFAULTS = {
       dashboard_schools_without_schedule: true,
       dashboard_monitor_alerts: true,
       dashboard_operational_history: false,
+      dashboard_http_metrics_view: false,
+      dashboard_http_metrics_filters: false,
       config_schedule_write: true,
       config_approve_changes: false,
       config_auto_approve_changes: false,
@@ -142,6 +169,7 @@ const ROLE_PERMISSION_DEFAULTS = {
     features: {
       dashboard_manual_section: true,
       dashboard_manual_play: true,
+      dashboard_signal_audio: true,
       dashboard_last_signal: true,
       dashboard_next_signal: true,
       dashboard_schedule_interface: true,
@@ -150,6 +178,8 @@ const ROLE_PERMISSION_DEFAULTS = {
       dashboard_schools_without_schedule: true,
       dashboard_monitor_alerts: true,
       dashboard_operational_history: false,
+      dashboard_http_metrics_view: false,
+      dashboard_http_metrics_filters: false,
       config_schedule_write: false,
       config_approve_changes: false,
       config_auto_approve_changes: false,
@@ -258,9 +288,258 @@ const pool = new Pool({
   lookup: createLookupWithFallback(),
 });
 
+function toIsoNow() {
+  return new Date().toISOString();
+}
+
+function serializeError(error) {
+  if (!error) return null;
+  return {
+    message: error.message || null,
+    code: error.code || null,
+    name: error.name || null,
+  };
+}
+
+function logStructured(level, event, details = {}) {
+  const payload = {
+    timestamp: toIsoNow(),
+    level,
+    event,
+    ...details,
+  };
+  const serialized = JSON.stringify(payload);
+  if (level === "error") {
+    console.error(serialized);
+    return;
+  }
+  console.log(serialized);
+}
+
+function normalizeEndpointKey(req) {
+  const method = String(req.method || "").toUpperCase() || "UNKNOWN";
+  const pathValue = String(req.path || req.originalUrl || "/");
+  return `${method} ${pathValue}`;
+}
+
+function pruneHttpMetricEvents(nowMs = Date.now()) {
+  const cutoff = nowMs - HTTP_METRICS_MAX_AGE_MS;
+  if (!httpMetrics.recentEvents.length) return;
+  httpMetrics.recentEvents = httpMetrics.recentEvents.filter((event) => event.timestampMs >= cutoff);
+  if (httpMetrics.recentEvents.length > HTTP_METRICS_MAX_EVENTS) {
+    httpMetrics.recentEvents = httpMetrics.recentEvents.slice(-HTTP_METRICS_MAX_EVENTS);
+  }
+}
+
+function recordHttpMetric(metric) {
+  const endpointKey = String(metric?.endpoint || "UNKNOWN");
+  const method = String(metric?.method || "UNKNOWN").toUpperCase();
+  const durationMs = Number(metric?.durationMs) || 0;
+  const statusCode = Number(metric?.statusCode) || 0;
+  const timestampMs = Number(metric?.timestampMs) || Date.now();
+
+  const key = String(endpointKey || "UNKNOWN");
+  const previous = httpMetrics.byEndpoint.get(key) || {
+    method,
+    count: 0,
+    errors: 0,
+    totalLatencyMs: 0,
+    maxLatencyMs: 0,
+    lastStatusCode: 0,
+    lastSeenAt: null,
+  };
+
+  previous.count += 1;
+  previous.totalLatencyMs += durationMs;
+  previous.maxLatencyMs = Math.max(previous.maxLatencyMs, durationMs);
+  previous.lastStatusCode = Number(statusCode) || 0;
+  previous.lastSeenAt = toIsoNow();
+  if (Number(statusCode) >= 500) previous.errors += 1;
+
+  httpMetrics.byEndpoint.set(key, previous);
+  httpMetrics.totalRequests += 1;
+  if (Number(statusCode) >= 500) httpMetrics.totalErrors += 1;
+
+  httpMetrics.recentEvents.push({
+    endpoint: key,
+    method,
+    statusCode,
+    durationMs,
+    timestampMs,
+  });
+  pruneHttpMetricEvents(timestampMs);
+}
+
+function getHttpMetricsSnapshot(options = {}) {
+  const topNRaw = Number.parseInt(String(options.topN || "10"), 10);
+  const topN = Number.isInteger(topNRaw) ? Math.min(Math.max(topNRaw, 1), 100) : 10;
+  const methodInput = String(options.method || "ALL").trim().toUpperCase();
+  const allowedMethods = new Set(["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"]);
+  const method = allowedMethods.has(methodInput) ? methodInput : "ALL";
+  const windowRaw = Number.parseInt(String(options.windowMinutes || "60"), 10);
+  const windowMinutes = Number.isInteger(windowRaw) ? Math.min(Math.max(windowRaw, 5), 1440) : 60;
+
+  const nowMs = Date.now();
+  pruneHttpMetricEvents(nowMs);
+  const cutoff = nowMs - windowMinutes * 60 * 1000;
+
+  const filtered = httpMetrics.recentEvents.filter((event) => {
+    if (event.timestampMs < cutoff) return false;
+    if (method !== "ALL" && event.method !== method) return false;
+    return true;
+  });
+
+  const byEndpoint = new Map();
+  filtered.forEach((event) => {
+    const previous = byEndpoint.get(event.endpoint) || {
+      endpoint: event.endpoint,
+      method: event.method,
+      requests: 0,
+      errors: 0,
+      totalLatencyMs: 0,
+      latencyMaxMs: 0,
+      lastStatusCode: 0,
+      lastSeenAt: null,
+    };
+    previous.requests += 1;
+    previous.totalLatencyMs += Number(event.durationMs) || 0;
+    previous.latencyMaxMs = Math.max(previous.latencyMaxMs, Number(event.durationMs) || 0);
+    previous.lastStatusCode = Number(event.statusCode) || 0;
+    previous.lastSeenAt = new Date(event.timestampMs).toISOString();
+    if (Number(event.statusCode) >= 500) previous.errors += 1;
+    byEndpoint.set(event.endpoint, previous);
+  });
+
+  const rows = Array.from(byEndpoint.values()).map((item) => ({
+    endpoint: item.endpoint,
+    method: item.method,
+    requests: item.requests,
+    errors: item.errors,
+    errorRate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
+    latencyAvgMs: item.requests > 0 ? Number((item.totalLatencyMs / item.requests).toFixed(2)) : 0,
+    latencyMaxMs: Number(item.latencyMaxMs.toFixed(2)),
+    lastStatusCode: item.lastStatusCode,
+    lastSeenAt: item.lastSeenAt,
+  }));
+
+  rows.sort((a, b) => b.requests - a.requests);
+  const totalRequests = filtered.length;
+  const totalErrors = filtered.reduce(
+    (sum, event) => sum + (Number(event.statusCode) >= 500 ? 1 : 0),
+    0
+  );
+
+  return {
+    scope: {
+      method,
+      windowMinutes,
+      topN,
+    },
+    totalRequests,
+    totalErrors,
+    endpoints: rows.slice(0, topN),
+  };
+}
+
+function isStrongPassword(password) {
+  const value = String(password || "");
+  if (value.length < PASSWORD_MIN_LENGTH) return false;
+  return PASSWORD_POLICY_REGEX.test(value);
+}
+
+function getPasswordPolicyDescription() {
+  return `minimum_length_${PASSWORD_MIN_LENGTH}_with_uppercase_lowercase_number_and_symbol`;
+}
+
+function getLoginRateLimitKey(req, email) {
+  const baseIp =
+    String(req.headers["x-forwarded-for"] || "")
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)[0] || req.socket?.remoteAddress || "unknown";
+  const normalizedEmail = String(email || "").trim().toLowerCase() || "unknown";
+  return `${baseIp}|${normalizedEmail}`;
+}
+
+function getLoginRateLimitRecord(key) {
+  const now = Date.now();
+  const existing = loginRateLimitState.get(key);
+  if (!existing || now - existing.windowStartedAt > LOGIN_RATE_LIMIT_WINDOW_MS) {
+    const next = {
+      windowStartedAt: now,
+      attempts: 0,
+      blockedUntil: 0,
+    };
+    loginRateLimitState.set(key, next);
+    return next;
+  }
+  return existing;
+}
+
+function isLoginBlocked(key) {
+  const record = getLoginRateLimitRecord(key);
+  const now = Date.now();
+  if (record.blockedUntil > now) {
+    return {
+      blocked: true,
+      retryAfterSeconds: Math.max(1, Math.ceil((record.blockedUntil - now) / 1000)),
+    };
+  }
+  return { blocked: false, retryAfterSeconds: 0 };
+}
+
+function registerFailedLoginAttempt(key) {
+  const record = getLoginRateLimitRecord(key);
+  const now = Date.now();
+  record.attempts += 1;
+  if (record.attempts >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS) {
+    record.blockedUntil = now + LOGIN_RATE_LIMIT_BLOCK_MS;
+  }
+}
+
+function clearLoginRateLimit(key) {
+  loginRateLimitState.delete(key);
+}
+
 app.disable("x-powered-by");
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+
+app.use("/api", (req, res, next) => {
+  const candidateRequestId = String(req.get("x-request-id") || "").trim();
+  const requestId = candidateRequestId && candidateRequestId.length <= 120
+    ? candidateRequestId
+    : crypto.randomUUID();
+  const startedAt = process.hrtime.bigint();
+
+  req.requestId = requestId;
+  res.setHeader("x-request-id", requestId);
+
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    const endpointKey = normalizeEndpointKey(req);
+    recordHttpMetric({
+      endpoint: endpointKey,
+      method: String(req.method || "UNKNOWN").toUpperCase(),
+      statusCode: res.statusCode,
+      durationMs,
+      timestampMs: Date.now(),
+    });
+
+    const shouldLogRequest = Number(res.statusCode) >= 400 || durationMs >= 1000;
+    if (shouldLogRequest) {
+      logStructured(Number(res.statusCode) >= 500 ? "error" : "info", "http_request", {
+        requestId,
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: Number(durationMs.toFixed(2)),
+      });
+    }
+  });
+
+  next();
+});
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 app.use("/api", (req, res, next) => {
@@ -498,12 +777,20 @@ function normalizeSchedulePayload(payload) {
 
 function sendInternalError(res, errorCode, err) {
   const payload = { error: errorCode };
+  if (res?.req?.requestId) {
+    payload.requestId = res.req.requestId;
+  }
   if (process.env.NODE_ENV !== "production") {
     payload.detail = {
       code: err?.code || null,
       message: err?.message || null,
     };
   }
+  logStructured("error", "internal_error_response", {
+    requestId: res?.req?.requestId || null,
+    errorCode,
+    error: serializeError(err),
+  });
   res.status(500).json(payload);
 }
 
@@ -515,6 +802,7 @@ function getRequestMeta(req) {
         .map((part) => part.trim())
         .filter(Boolean)[0] || req.socket?.remoteAddress || null,
     userAgent: req.get("user-agent") || null,
+    requestId: req.requestId || null,
   };
 }
 
@@ -542,7 +830,11 @@ async function writeAuditLog(entry, client = pool) {
       ]
     );
   } catch (error) {
-    console.error("Audit log insert error:", error);
+    logStructured("error", "audit_log_insert_failed", {
+      error: serializeError(error),
+      action: entry?.action || null,
+      resource: entry?.resource || null,
+    });
   }
 }
 
@@ -893,6 +1185,38 @@ async function runDailyBackupSweep(trigger = "daily", actorUserId = null) {
     return result;
   } finally {
     client.release();
+  }
+}
+
+async function runAuditRetentionSweep(trigger = "daily", actorUserId = null) {
+  const retentionDays = Math.max(7, AUDIT_LOG_RETENTION_DAYS);
+  try {
+    const result = await pool.query(
+      `
+      DELETE FROM audit_logs
+      WHERE created_at < NOW() - ($1::int) * INTERVAL '1 day'
+      `,
+      [retentionDays]
+    );
+
+    const sweepResult = {
+      trigger,
+      retentionDays,
+      deletedRows: Number(result.rowCount) || 0,
+      actorUserId: actorUserId || null,
+      executedAt: toIsoNow(),
+    };
+    runtimeStats.lastAuditRetentionSweepAt = sweepResult.executedAt;
+    runtimeStats.lastAuditRetentionSweepResult = sweepResult;
+    return sweepResult;
+  } catch (error) {
+    logStructured("error", "audit_retention_sweep_failed", {
+      trigger,
+      retentionDays,
+      actorUserId: actorUserId || null,
+      error: serializeError(error),
+    });
+    throw error;
   }
 }
 
@@ -1440,9 +1764,19 @@ app.get("/api/health", async (_req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   const email = String(req.body?.email || "").trim().toLowerCase();
   const password = String(req.body?.password || "");
+  const rateLimitKey = getLoginRateLimitKey(req, email);
+  const rateLimitState = isLoginBlocked(rateLimitKey);
+  const requestMeta = getRequestMeta(req);
 
   if (!email || !password) {
     return res.status(400).json({ error: "email_and_password_required" });
+  }
+  if (rateLimitState.blocked) {
+    res.setHeader("retry-after", String(rateLimitState.retryAfterSeconds));
+    return res.status(429).json({
+      error: "too_many_login_attempts",
+      retryAfterSeconds: rateLimitState.retryAfterSeconds,
+    });
   }
 
   try {
@@ -1459,12 +1793,36 @@ app.post("/api/auth/login", async (req, res) => {
     );
 
     if (!result.rowCount) {
+      registerFailedLoginAttempt(rateLimitKey);
+      await writeAuditLog({
+        userId: null,
+        schoolId: null,
+        action: "login_failed",
+        resource: "auth",
+        resourceId: null,
+        afterData: { email, reason: "user_not_found_or_inactive" },
+        ip: requestMeta.ip,
+        userAgent: requestMeta.userAgent,
+        meta: { requestId: requestMeta.requestId },
+      });
       return res.status(401).json({ error: "invalid_credentials" });
     }
 
     const user = result.rows[0];
     const matches = await bcrypt.compare(password, user.password_hash);
     if (!matches) {
+      registerFailedLoginAttempt(rateLimitKey);
+      await writeAuditLog({
+        userId: user.id || null,
+        schoolId: user.school_id || null,
+        action: "login_failed",
+        resource: "auth",
+        resourceId: String(user.id || ""),
+        afterData: { email, reason: "invalid_password" },
+        ip: requestMeta.ip,
+        userAgent: requestMeta.userAgent,
+        meta: { requestId: requestMeta.requestId },
+      });
       return res.status(401).json({ error: "invalid_credentials" });
     }
 
@@ -1485,6 +1843,7 @@ app.post("/api/auth/login", async (req, res) => {
       }
     );
 
+    clearLoginRateLimit(rateLimitKey);
     const meta = getRequestMeta(req);
     await writeAuditLog({
       userId: user.id,
@@ -1495,11 +1854,16 @@ app.post("/api/auth/login", async (req, res) => {
       afterData: { email: user.email, role: user.role },
       ip: meta.ip,
       userAgent: meta.userAgent,
+      meta: { requestId: meta.requestId },
     });
 
     res.json({ token, user: sanitizeUser(user) });
   } catch (error) {
-    console.error("POST /api/auth/login error:", error);
+    logStructured("error", "auth_login_failed", {
+      requestId: req.requestId || null,
+      email,
+      error: serializeError(error),
+    });
     sendInternalError(res, "failed_to_login", error);
   }
 });
@@ -1576,6 +1940,7 @@ app.post(
         },
         ip: meta.ip,
         userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
       });
 
       return res.json({
@@ -1596,8 +1961,11 @@ app.post("/api/auth/change-password", authenticate, async (req, res) => {
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: "current_and_new_password_required" });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: "password_too_short" });
+  if (!isStrongPassword(newPassword)) {
+    return res.status(400).json({
+      error: "weak_password",
+      policy: getPasswordPolicyDescription(),
+    });
   }
 
   try {
@@ -1617,6 +1985,18 @@ app.post("/api/auth/change-password", authenticate, async (req, res) => {
     const userRow = userResult.rows[0];
     const matches = await bcrypt.compare(currentPassword, userRow.password_hash);
     if (!matches) {
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.user.schoolId || null,
+        action: "change_password_failed",
+        resource: "auth",
+        resourceId: String(req.user.id),
+        afterData: { reason: "invalid_current_password" },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
+      });
       return res.status(401).json({ error: "invalid_current_password" });
     }
 
@@ -1646,6 +2026,7 @@ app.post("/api/auth/change-password", authenticate, async (req, res) => {
       afterData: { changedAt: new Date().toISOString() },
       ip: meta.ip,
       userAgent: meta.userAgent,
+      meta: { requestId: meta.requestId },
     });
 
     res.json({ success: true });
@@ -1710,8 +2091,11 @@ app.post(
     if (!name || !email || !password || !ALL_ROLES.includes(role)) {
       return res.status(400).json({ error: "invalid_user_payload" });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: "password_too_short" });
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        error: "weak_password",
+        policy: getPasswordPolicyDescription(),
+      });
     }
 
     const isSuperAdmin = req.user.role === ROLE_SUPERADMIN;
@@ -1769,6 +2153,7 @@ app.post(
         afterData: created,
         ip: meta.ip,
         userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
       });
 
       res.status(201).json(created);
@@ -1880,8 +2265,11 @@ app.patch(
         return res.status(403).json({ error: "password_reset_requires_superadmin" });
       }
       const password = String(req.body.password || "");
-      if (password.length < 6) {
-        return res.status(400).json({ error: "password_too_short" });
+      if (!isStrongPassword(password)) {
+        return res.status(400).json({
+          error: "weak_password",
+          policy: getPasswordPolicyDescription(),
+        });
       }
       const hash = await bcrypt.hash(password, 12);
       values.push(hash);
@@ -1953,6 +2341,7 @@ app.patch(
       afterData: after,
       ip: meta.ip,
       userAgent: meta.userAgent,
+      meta: { requestId: meta.requestId },
     });
 
     res.json(after);
@@ -1976,8 +2365,11 @@ app.post(
     const userId = toIntId(req.params.id);
     const newPassword = String(req.body?.newPassword || "");
     if (!userId) return res.status(400).json({ error: "invalid_user_id" });
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: "password_too_short" });
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({
+        error: "weak_password",
+        policy: getPasswordPolicyDescription(),
+      });
     }
 
     try {
@@ -2019,6 +2411,7 @@ app.post(
         afterData: { passwordReset: true },
         ip: meta.ip,
         userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
       });
 
       res.json({ success: true });
@@ -3072,6 +3465,22 @@ app.get(
         [req.targetSchoolId, limit]
       );
 
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.targetSchoolId,
+        action: "view_backup_snapshots",
+        resource: "backup",
+        resourceId: String(req.targetSchoolId),
+        afterData: {
+          requestedLimit: limit,
+          returnedCount: result.rowCount || 0,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
+      });
+
       res.json(
         result.rows.map((row) => ({
           id: row.id,
@@ -3119,6 +3528,22 @@ app.get(
       }
 
       const row = result.rows[0];
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.targetSchoolId,
+        action: "view_backup_snapshot",
+        resource: "backup",
+        resourceId: String(backupId),
+        afterData: {
+          trigger: row.trigger,
+          createdAt: row.created_at,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
+      });
+
       res.json({
         id: row.id,
         schoolId: row.school_id,
@@ -3184,6 +3609,7 @@ app.post(
           },
           ip: meta.ip,
           userAgent: meta.userAgent,
+          meta: { requestId: meta.requestId },
         });
 
         return res.status(202).json({
@@ -3227,6 +3653,7 @@ app.post(
           afterData: schedule,
           ip: meta.ip,
           userAgent: meta.userAgent,
+          meta: { requestId: meta.requestId },
         });
 
         return res.json({
@@ -3252,6 +3679,7 @@ app.post(
         afterData: schedule,
         ip: meta.ip,
         userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
       });
 
       return res.json({ success: true, schedule });
@@ -3322,6 +3750,7 @@ app.post(
           },
           ip: meta.ip,
           userAgent: meta.userAgent,
+          meta: { requestId: meta.requestId },
         });
 
         return res.status(202).json({
@@ -3364,6 +3793,7 @@ app.post(
           beforeData: beforeSchedule,
           afterData: schedule,
           meta: {
+            requestId: meta.requestId,
             backupId: backup.id,
             trigger: backup.trigger,
             backupCreatedAt: backup.created_at,
@@ -3396,6 +3826,7 @@ app.post(
         beforeData: beforeSchedule,
         afterData: schedule,
         meta: {
+          requestId: meta.requestId,
           trigger: backup.trigger,
           backupCreatedAt: backup.created_at,
           backupCreatedBy: backup.created_by,
@@ -3834,8 +4265,11 @@ app.get(
           uptimeSeconds,
           lastMonitoringSweepAt: runtimeStats.lastMonitoringSweepAt,
           lastDailyBackupSweepAt: runtimeStats.lastDailyBackupSweepAt,
+          lastAuditRetentionSweepAt: runtimeStats.lastAuditRetentionSweepAt,
           lastMonitoringSweepResult: runtimeStats.lastMonitoringSweepResult,
           lastDailyBackupSweepResult: runtimeStats.lastDailyBackupSweepResult,
+          lastAuditRetentionSweepResult: runtimeStats.lastAuditRetentionSweepResult,
+          httpMetrics: getHttpMetricsSnapshot(),
         },
         openAlertsTotal,
         playbackFailuresLast24h: playbackFailures.rows[0]?.total || 0,
@@ -3957,8 +4391,11 @@ app.get(
           uptimeSeconds,
           lastMonitoringSweepAt: runtimeStats.lastMonitoringSweepAt,
           lastDailyBackupSweepAt: runtimeStats.lastDailyBackupSweepAt,
+          lastAuditRetentionSweepAt: runtimeStats.lastAuditRetentionSweepAt,
           lastMonitoringSweepResult: runtimeStats.lastMonitoringSweepResult,
           lastDailyBackupSweepResult: runtimeStats.lastDailyBackupSweepResult,
+          lastAuditRetentionSweepResult: runtimeStats.lastAuditRetentionSweepResult,
+          httpMetrics: getHttpMetricsSnapshot(),
         },
         openAlertsTotal,
         playbackFailuresLast24h: playbackFailures.rows[0]?.total || 0,
@@ -4049,6 +4486,42 @@ app.get(
   }
 );
 
+app.get(
+  "/api/monitor/http-metrics",
+  authenticate,
+  requirePermission("menus.dashboard"),
+  requirePermission("features.dashboard_http_metrics_view"),
+  async (req, res) => {
+    const canFilter = hasEffectivePermission(req.user, "features.dashboard_http_metrics_filters");
+    const snapshot = getHttpMetricsSnapshot({
+      topN: canFilter ? req.query.topN : 10,
+      method: canFilter ? req.query.method : "ALL",
+      windowMinutes: canFilter ? req.query.windowMinutes : 60,
+    });
+    const meta = getRequestMeta(req);
+    await writeAuditLog({
+      userId: req.user.id,
+      schoolId: null,
+      action: "view_http_metrics",
+      resource: "monitor",
+      resourceId: "http-metrics",
+      afterData: {
+        totalRequests: snapshot.totalRequests,
+        totalErrors: snapshot.totalErrors,
+        scope: snapshot.scope,
+      },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+      meta: { requestId: meta.requestId },
+    });
+
+    return res.json({
+      generatedAt: toIsoNow(),
+      metrics: snapshot,
+    });
+  }
+);
+
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "api_route_not_found" });
 });
@@ -4088,6 +4561,7 @@ async function initializeApp(options = {}) {
   if (!isServerless) {
     await runMonitoringSweep("startup");
     await runDailyBackupSweep("daily");
+    await runAuditRetentionSweep("startup");
 
     if (!schedulerStarted) {
       schedulerStarted = true;
@@ -4103,6 +4577,12 @@ async function initializeApp(options = {}) {
           console.error("Daily backup sweep error:", error);
         });
       }, DAILY_BACKUP_INTERVAL_MS).unref();
+
+      setInterval(() => {
+        runAuditRetentionSweep("daily").catch((error) => {
+          console.error("Audit retention sweep error:", error);
+        });
+      }, DAILY_BACKUP_INTERVAL_MS).unref();
     }
   }
 }
@@ -4114,4 +4594,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, initializeApp };
+module.exports = { app, initializeApp, pool };

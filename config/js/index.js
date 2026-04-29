@@ -5,6 +5,7 @@ let sinaisTocadosHoje = new Set();
 let audioContext = null;
 let currentSource = null;
 let countdownInterval = null;
+let dashboardSignalAudioEnabled = true;
 
 const API_BASE = "/api";
 const AUTH_TOKEN_STORAGE_KEY = "authToken";
@@ -65,7 +66,10 @@ function applyDashboardPermissions(user) {
   };
 
   const canSeeManualSection = hasDashboardFeature("dashboard_manual_section");
-  const canPlayManual = canSeeManualSection && hasDashboardFeature("dashboard_manual_play");
+  const canUseSignalAudio = hasDashboardFeature("dashboard_signal_audio");
+  dashboardSignalAudioEnabled = canUseSignalAudio;
+  const canPlayManual =
+    canSeeManualSection && canUseSignalAudio && hasDashboardFeature("dashboard_manual_play");
   const canSeeLastSignal = hasDashboardFeature("dashboard_last_signal");
   const canSeeNextSignal = hasDashboardFeature("dashboard_next_signal");
   const canSeeScheduleInterface = hasDashboardFeature("dashboard_schedule_interface");
@@ -214,6 +218,8 @@ async function reportPlaybackError(error, music, duration) {
 }
 
 async function initAudio(music = "sino.mp3", duration = 12, volume = 0.9) {
+  if (!dashboardSignalAudioEnabled) return;
+
   try {
     if (!audioContext || audioContext.state === "closed") {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -379,7 +385,7 @@ function tocarSinal(signal) {
 
   const rowId = `row-${String(signal.time || "").replace(":", "-")}`;
   const rowElement = document.getElementById(rowId);
-  if (rowElement) {
+  if (rowElement && dashboardSignalAudioEnabled) {
     rowElement.classList.add("row-playing");
     const duration = (signal.duration || 15) * 1000;
     setTimeout(() => {
@@ -387,7 +393,9 @@ function tocarSinal(signal) {
     }, duration);
   }
 
-  initAudio(signal.music, signal.duration);
+  if (dashboardSignalAudioEnabled) {
+    initAudio(signal.music, signal.duration);
+  }
   setTimeout(startScheduler, 500);
 }
 

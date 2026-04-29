@@ -77,9 +77,16 @@ Variaveis suportadas:
 - `JWT_SECRET`: segredo JWT (obrigatorio em producao).
 - `JWT_EXPIRES_IN`: exp de token principal (padrao `12h`).
 - `SIMULATION_TOKEN_TTL`: exp de token de simulacao (padrao `30m`).
+- `PASSWORD_MIN_LENGTH`: tamanho minimo da senha forte (padrao `10`).
+- `LOGIN_RATE_LIMIT_WINDOW_MS`: janela do rate limit de login (padrao `900000`).
+- `LOGIN_RATE_LIMIT_MAX_ATTEMPTS`: tentativas maximas por IP+email na janela (padrao `8`).
+- `LOGIN_RATE_LIMIT_BLOCK_MS`: bloqueio apos exceder tentativas (padrao `1200000`).
 - `DEFAULT_ADMIN_NAME`, `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD`: seed inicial do superadmin (somente quando nao existem usuarios).
 - `MONITOR_INTERVAL_MS`: intervalo do sweep de monitoramento.
 - `DAILY_BACKUP_INTERVAL_MS`: intervalo do backup automatico diario.
+- `AUDIT_LOG_RETENTION_DAYS`: retencao automatica dos logs de auditoria em dias (padrao `180`).
+- `HTTP_METRICS_MAX_EVENTS`: maximo de eventos HTTP em memoria (padrao `20000`).
+- `HTTP_METRICS_MAX_AGE_MS`: idade maxima dos eventos HTTP em memoria (padrao `86400000`).
 
 Observacao:
 
@@ -106,6 +113,12 @@ npm start
 4. Healthcheck:
 
 - `GET http://localhost:3000/api/health`
+
+5. Testes automatizados:
+
+```bash
+npm test
+```
 
 ## Perfis e permissoes
 
@@ -136,6 +149,8 @@ Perfis base:
   - `dashboard_schools_without_schedule`
   - `dashboard_monitor_alerts`
   - `dashboard_operational_history`
+  - `dashboard_http_metrics_view`
+  - `dashboard_http_metrics_filters`
 - Config:
   - `config_schedule_write`
   - `config_approve_changes`
@@ -224,6 +239,12 @@ flowchart TD
 - `POST /api/monitor/playback-error`
 - `GET /api/monitor/status`
 - `GET /api/monitor/history`
+- `GET /api/monitor/http-metrics` (requer permissao `dashboard_http_metrics_view`)
+
+Eventos de auditoria de leitura:
+- Visualizacao de lista de backups por escola.
+- Visualizacao de snapshot individual de backup.
+- Consulta de metricas HTTP de observabilidade.
 
 ## Deploy na Vercel
 
