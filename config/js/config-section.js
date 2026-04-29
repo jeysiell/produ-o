@@ -11,7 +11,7 @@
   const ROLE_ADMIN_ESCOLA = "admin_escola";
   const ROLE_SOMENTE_LEITURA = "somente_leitura";
   const PERMISSION_KEYS = {
-    menus: ["dashboard", "config", "schools", "users", "audit"],
+    menus: ["dashboard", "config", "schools", "users", "audios", "audit"],
     features: [
       "dashboard_manual_section",
       "dashboard_manual_play",
@@ -33,6 +33,7 @@
       "config_backup_export",
       "config_backup_import",
       "config_backup_restore",
+      "audio_manage",
       "users_create",
       "users_edit",
       "users_disable",
@@ -47,6 +48,7 @@
         config: true,
         schools: true,
         users: true,
+        audios: true,
         audit: true,
       },
       features: {
@@ -70,6 +72,7 @@
         config_backup_export: true,
         config_backup_import: true,
         config_backup_restore: true,
+        audio_manage: true,
         users_create: true,
         users_edit: true,
         users_disable: true,
@@ -83,6 +86,7 @@
         config: true,
         schools: false,
         users: true,
+        audios: true,
         audit: true,
       },
       features: {
@@ -106,6 +110,7 @@
         config_backup_export: true,
         config_backup_import: true,
         config_backup_restore: true,
+        audio_manage: true,
         users_create: true,
         users_edit: true,
         users_disable: true,
@@ -119,6 +124,7 @@
         config: true,
         schools: false,
         users: false,
+        audios: false,
         audit: true,
       },
       features: {
@@ -142,6 +148,7 @@
         config_backup_export: true,
         config_backup_import: false,
         config_backup_restore: false,
+        audio_manage: false,
         users_create: false,
         users_edit: false,
         users_disable: false,
@@ -156,6 +163,7 @@
       config: "Menu Configuracoes",
       schools: "Menu Escolas",
       users: "Menu Usuarios",
+      audios: "Menu Audios",
       audit: "Menu Auditoria",
     },
     features: {
@@ -179,6 +187,7 @@
       config_backup_export: "Config: exportar backup",
       config_backup_import: "Config: importar backup",
       config_backup_restore: "Config: restaurar backups",
+      audio_manage: "Audios: gerenciar musicas",
       users_create: "Usuarios: criar",
       users_edit: "Usuarios: editar",
       users_disable: "Usuarios: desativar",
@@ -222,6 +231,7 @@
       menu: "users",
       features: ["users_create", "users_edit", "users_disable", "users_reset_password"],
     },
+    { menu: "audios", features: ["audio_manage"] },
     { menu: "audit", features: ["audit_view"] },
   ];
   const USER_PERMISSION_PRESETS = {
@@ -347,24 +357,19 @@
     },
   };
 
-  const musicLabels = {
-    "musica1.mp3": "Tu me Sondas",
-    "musica2.mp3": "Eu Amo a Minha Escola",
-    "musica3.mp3": "My Lighthouse",
-    "musica4.mp3": "Amor Teimoso",
-    "musica5.mp3": "Minha vida e uma viagem",
-    "musica6.mp3": "A Biblia",
-  };
+  const musicLabels = {};
 
   const navDashboard = document.getElementById("navDashboard");
   const navConfig = document.getElementById("navConfig");
   const navSchools = document.getElementById("navSchools");
   const navUsers = document.getElementById("navUsers");
+  const navAudios = document.getElementById("navAudios");
   const navAudits = document.getElementById("navAudits");
   const dashboardSection = document.getElementById("dashboardSection");
   const configSection = document.getElementById("configSection");
   const schoolsSection = document.getElementById("schoolsSection");
   const usersSection = document.getElementById("usersSection");
+  const audiosSection = document.getElementById("audiosSection");
   const auditSection = document.getElementById("auditSection");
   const pageEyebrow = document.getElementById("pageEyebrow");
   const pageTitle = document.getElementById("pageTitle");
@@ -442,6 +447,7 @@
   const nameInput = document.getElementById("nameInput");
   const musicSelect = document.getElementById("musicSelect");
   const durationSelect = document.getElementById("durationSelect");
+  const manualMusicSelect = document.getElementById("manualMusic");
 
   const schoolsTableBody = document.getElementById("schoolsTableBody");
   const schoolBtn = document.getElementById("schoolBtn");
@@ -476,6 +482,21 @@
   const userEffectivePermissionsPanel = document.getElementById("userEffectivePermissionsPanel");
   const userActiveInput = document.getElementById("userActiveInput");
 
+  const audioForm = document.getElementById("audioForm");
+  const audioFileInput = document.getElementById("audioFileInput");
+  const audioFileMeta = document.getElementById("audioFileMeta");
+  const audioTrackNameInput = document.getElementById("audioTrackNameInput");
+  const audioClipStartInput = document.getElementById("audioClipStartInput");
+  const audioClipRangeLabel = document.getElementById("audioClipRangeLabel");
+  const audioTimeline = document.getElementById("audioTimeline");
+  const audioWaveform = document.getElementById("audioWaveform");
+  const audioClipWindow = document.getElementById("audioClipWindow");
+  const audioTimelineHint = document.getElementById("audioTimelineHint");
+  const previewAudioClipBtn = document.getElementById("previewAudioClipBtn");
+  const saveAudioTrackBtn = document.getElementById("saveAudioTrackBtn");
+  const refreshAudioTracksBtn = document.getElementById("refreshAudioTracksBtn");
+  const audioTracksTableBody = document.getElementById("audioTracksTableBody");
+
   const auditSchoolFilter = document.getElementById("auditSchoolFilter");
   const auditUserFilter = document.getElementById("auditUserFilter");
   const auditActionFilter = document.getElementById("auditActionFilter");
@@ -491,6 +512,7 @@
   const loginPassword = document.getElementById("loginPassword");
   const loginError = document.getElementById("loginError");
   const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+  const toggleLoginPasswordBtn = document.getElementById("toggleLoginPassword");
   const authUserBadge = document.getElementById("authUserBadge");
   const authUserName = document.getElementById("authUserName");
   const authUserRole = document.getElementById("authUserRole");
@@ -527,10 +549,20 @@
   let schools = [];
   let templates = [];
   let users = [];
+  let audioTracks = [];
+  let selectedAudioFile = null;
+  let selectedAudioBuffer = null;
+  let previewAudioElement = null;
+  let audioClipDragState = null;
   let auditLogs = [];
   let backupSnapshots = [];
   let pendingScheduleRequests = [];
   let currentUser = null;
+  let dashboardMonitorLastLoadedAt = 0;
+  let dashboardMonitorLastCacheKey = "";
+  let dashboardMonitorInFlight = null;
+  const DASHBOARD_MONITOR_AUTO_REFRESH_MS = 5 * 60 * 1000;
+  const DASHBOARD_MONITOR_DEDUPE_MS = 20 * 1000;
   const feedbackUI = window.feedbackUI || {};
   const STRONG_PASSWORD_HINT =
     "A senha deve ter no minimo 10 caracteres com letra maiuscula, minuscula, numero e simbolo.";
@@ -619,6 +651,14 @@
 
   function canAccessSchoolsMenu() {
     return isSuperAdmin() && !isSimulationActive() && hasPermission("menus.schools");
+  }
+
+  function canAccessAudiosMenu() {
+    return Boolean(currentUser) && !isSimulationActive() && hasPermission("menus.audios");
+  }
+
+  function canManageAudioTracks() {
+    return canAccessAudiosMenu() && hasPermission("features.audio_manage");
   }
 
   function canViewDashboardManualSection() {
@@ -896,6 +936,9 @@
     if (!authOverlay) return;
     authOverlay.classList.remove("hidden");
     authOverlay.classList.add("flex");
+    setTimeout(() => {
+      loginEmail?.focus();
+    }, 80);
   }
 
   function hideAuthOverlay() {
@@ -913,6 +956,26 @@
     }
     loginError.textContent = message;
     loginError.classList.remove("hidden");
+  }
+
+  function setLoginLoading(isLoading) {
+    if (!loginSubmitBtn) return;
+    loginSubmitBtn.disabled = Boolean(isLoading);
+    loginSubmitBtn.innerHTML = isLoading
+      ? '<i class="fas fa-spinner animate-spin text-xs"></i><span data-login-label>Entrando...</span>'
+      : '<span data-login-label>Entrar</span><i data-login-icon class="fas fa-arrow-right text-xs transition group-hover:translate-x-0.5"></i>';
+  }
+
+  function toggleLoginPasswordVisibility() {
+    if (!loginPassword || !toggleLoginPasswordBtn) return;
+    const shouldShow = loginPassword.type === "password";
+    loginPassword.type = shouldShow ? "text" : "password";
+    toggleLoginPasswordBtn.setAttribute("aria-label", shouldShow ? "Ocultar senha" : "Mostrar senha");
+    toggleLoginPasswordBtn.setAttribute("title", shouldShow ? "Ocultar senha" : "Mostrar senha");
+    toggleLoginPasswordBtn.innerHTML = shouldShow
+      ? '<i class="fas fa-eye-slash"></i>'
+      : '<i class="fas fa-eye"></i>';
+    loginPassword.focus();
   }
 
   function broadcastAuthChanged(authenticated) {
@@ -986,12 +1049,13 @@
 
     const targetSchoolId = payload.user?.schoolId ? String(payload.user.schoolId) : "";
     await loadSchools();
+    await loadAudioTracks();
     if (targetSchoolId && String(getCurrentSchoolId() || "") !== targetSchoolId) {
       await setCurrentSchoolId(targetSchoolId, { dispatch: true });
     }
     await loadUsers();
     await loadAuditLogs();
-    await loadDashboardMonitorInfo();
+    await loadDashboardMonitorInfo({ force: true });
     await loadConfigSchedule();
     switchSection("dashboard");
     broadcastAuthChanged(true);
@@ -1014,9 +1078,10 @@
     }
 
     await loadSchools();
+    await loadAudioTracks();
     await loadUsers();
     await loadAuditLogs();
-    await loadDashboardMonitorInfo();
+    await loadDashboardMonitorInfo({ force: true });
     await loadConfigSchedule();
     switchSection("dashboard");
     broadcastAuthChanged(true);
@@ -1074,7 +1139,7 @@
     await loadTemplates();
     await loadBackupSnapshots();
     await loadScheduleChangeRequests();
-    await loadDashboardMonitorInfo();
+    await loadDashboardMonitorInfo({ force: true });
 
     const configVisible = !configSection?.classList.contains("hidden");
     if (configVisible) {
@@ -1105,13 +1170,15 @@
     if (target === "config" && !canAccessConfigMenu()) target = "dashboard";
     if (target === "schools" && !canAccessSchoolsMenu()) target = "dashboard";
     if (target === "users" && !canManageUsers()) target = "dashboard";
+    if (target === "audios" && !canAccessAudiosMenu()) target = "dashboard";
     if (target === "audit" && !canViewAuditLogs()) target = "dashboard";
 
-    const fallbackOrder = ["dashboard", "config", "users", "audit", "schools"];
+    const fallbackOrder = ["dashboard", "config", "audios", "users", "audit", "schools"];
     const isAllowedTarget = (value) =>
       (value === "dashboard" && canAccessDashboardMenu()) ||
       (value === "config" && canAccessConfigMenu()) ||
       (value === "users" && canManageUsers()) ||
+      (value === "audios" && canAccessAudiosMenu()) ||
       (value === "audit" && canViewAuditLogs()) ||
       (value === "schools" && canAccessSchoolsMenu());
     if (!isAllowedTarget(target)) {
@@ -1122,18 +1189,21 @@
     const showConfig = target === "config" && canAccessConfigMenu();
     const showSchools = target === "schools" && canAccessSchoolsMenu();
     const showUsers = target === "users" && canManageUsers();
+    const showAudios = target === "audios" && canAccessAudiosMenu();
     const showAudit = target === "audit" && canViewAuditLogs();
 
     dashboardSection?.classList.toggle("hidden", !showDashboard);
     configSection?.classList.toggle("hidden", !showConfig);
     schoolsSection?.classList.toggle("hidden", !showSchools);
     usersSection?.classList.toggle("hidden", !showUsers);
+    audiosSection?.classList.toggle("hidden", !showAudios);
     auditSection?.classList.toggle("hidden", !showAudit);
 
     setNavState(navDashboard, showDashboard);
     setNavState(navConfig, showConfig);
     setNavState(navSchools, showSchools);
     setNavState(navUsers, showUsers);
+    setNavState(navAudios, showAudios);
     setNavState(navAudits, showAudit);
 
     if (showDashboard) setPageTitle("Sinais");
@@ -1148,6 +1218,10 @@
     if (showUsers) {
       setPageTitle("Usuarios");
       renderUsersTable();
+    }
+    if (showAudios) {
+      setPageTitle("Audios");
+      renderAudioTracksTable();
     }
     if (showAudit) {
       setPageTitle("Auditoria");
@@ -1172,6 +1246,9 @@
     }
     if (navUsers) {
       navUsers.classList.toggle("hidden", !canManageUsers());
+    }
+    if (navAudios) {
+      navAudios.classList.toggle("hidden", !canAccessAudiosMenu());
     }
     if (navAudits) {
       navAudits.classList.toggle("hidden", !canViewAuditLogs());
@@ -1221,7 +1298,7 @@
       userBtn.classList.toggle("cursor-not-allowed", !canCreateUsers());
     }
     if (dashboardManualPlayBtn) {
-      const canPlayAudio = canPlayDashboardManualAudio();
+      const canPlayAudio = canPlayDashboardManualAudio() && getAllAudioTracks().length > 0;
       dashboardManualPlayBtn.disabled = !canPlayAudio;
       dashboardManualPlayBtn.classList.toggle("opacity-50", !canPlayAudio);
       dashboardManualPlayBtn.classList.toggle("cursor-not-allowed", !canPlayAudio);
@@ -1612,6 +1689,488 @@
       templates = [];
       templateSelect.innerHTML = `<option value="">Template</option>`;
       templateSelect.disabled = true;
+    }
+  }
+
+  function getAllAudioTracks() {
+    const dynamicTracks = audioTracks
+      .filter((track) => track && track.active !== false && track.publicUrl)
+      .map((track) => ({
+        id: `audio-${track.id}`,
+        name: track.name,
+        value: track.publicUrl,
+        url: track.publicUrl,
+        active: track.active !== false,
+        durationSeconds: track.durationSeconds || 20,
+      }));
+    return dynamicTracks;
+  }
+
+  function refreshAudioGlobals() {
+    const allTracks = getAllAudioTracks();
+    allTracks.forEach((track) => {
+      musicLabels[track.value] = track.name;
+    });
+    window.audioTracks = allTracks;
+    window.getAudioTrackUrl = (value) => {
+      const track = getAllAudioTracks().find((item) => item.value === value);
+      return track?.url || (String(value || "").startsWith("http") ? value : "");
+    };
+    window.getAudioTrackLabel = (value) => {
+      const track = getAllAudioTracks().find((item) => item.value === value);
+      return track?.name || value || "Sino Padrao";
+    };
+    window.dispatchEvent(new CustomEvent("audio:changed", { detail: { tracks: allTracks } }));
+  }
+
+  function populateAudioSelect(selectElement, selectedValue = "") {
+    if (!selectElement) return;
+    const previous = selectedValue || selectElement.value;
+    selectElement.innerHTML = "";
+    const tracks = getAllAudioTracks();
+    if (!tracks.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "Cadastre um audio";
+      selectElement.appendChild(option);
+      selectElement.disabled = true;
+      return;
+    }
+    tracks.forEach((track) => {
+      const option = document.createElement("option");
+      option.value = track.value;
+      option.textContent = track.name;
+      selectElement.appendChild(option);
+    });
+    selectElement.disabled = false;
+    if (previous && Array.from(selectElement.options).some((option) => option.value === previous)) {
+      selectElement.value = previous;
+    }
+    if (audioFileInput) audioFileInput.disabled = !canManageAudioTracks();
+    if (audioTrackNameInput) audioTrackNameInput.disabled = !canManageAudioTracks();
+    if (refreshAudioTracksBtn) refreshAudioTracksBtn.disabled = !canAccessAudiosMenu();
+  }
+
+  function refreshAudioSelects() {
+    populateAudioSelect(manualMusicSelect);
+    populateAudioSelect(musicSelect);
+    refreshAudioGlobals();
+    applyPermissions();
+  }
+
+  function formatAudioSeconds(value) {
+    const total = Math.max(0, Number(value) || 0);
+    const minutes = Math.floor(total / 60);
+    const seconds = Math.floor(total % 60);
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function updateAudioClipRangeLabel() {
+    const start = Number.parseFloat(audioClipStartInput?.value || "0") || 0;
+    const end = start + 20;
+    if (audioClipRangeLabel) {
+      audioClipRangeLabel.textContent = `${formatAudioSeconds(start)} - ${formatAudioSeconds(end)}`;
+    }
+    updateAudioClipWindowPosition();
+  }
+
+  function getAudioMaxClipStart() {
+    return Number.parseFloat(audioClipStartInput?.max || "0") || 0;
+  }
+
+  function setAudioClipStart(nextStart) {
+    if (!audioClipStartInput) return;
+    const maxStart = getAudioMaxClipStart();
+    const clamped = Math.min(Math.max(Number(nextStart) || 0, 0), maxStart);
+    audioClipStartInput.value = String(clamped.toFixed(1));
+    updateAudioClipRangeLabel();
+  }
+
+  function updateAudioClipWindowPosition() {
+    if (!audioClipWindow || !selectedAudioBuffer) return;
+    const duration = selectedAudioBuffer.duration || 20;
+    const start = Number.parseFloat(audioClipStartInput?.value || "0") || 0;
+    const widthPct = Math.min(100, (20 / duration) * 100);
+    const leftPct = duration > 20 ? (start / duration) * 100 : 0;
+    audioClipWindow.style.left = `${leftPct}%`;
+    audioClipWindow.style.width = `${widthPct}%`;
+    audioClipWindow.classList.remove("hidden");
+    audioClipWindow.setAttribute("aria-valuemin", "0");
+    audioClipWindow.setAttribute("aria-valuemax", String(getAudioMaxClipStart()));
+    audioClipWindow.setAttribute("aria-valuenow", String(start));
+    audioClipWindow.setAttribute("aria-valuetext", `${formatAudioSeconds(start)} ate ${formatAudioSeconds(start + 20)}`);
+  }
+
+  function renderAudioWaveform(audioBuffer) {
+    if (!audioWaveform || !audioTimelineHint) return;
+    audioWaveform.innerHTML = "";
+    if (!audioBuffer) {
+      audioTimelineHint.classList.remove("hidden");
+      audioClipWindow?.classList.add("hidden");
+      return;
+    }
+
+    const data = audioBuffer.getChannelData(0);
+    const bars = 96;
+    const samplesPerBar = Math.max(1, Math.floor(data.length / bars));
+    for (let index = 0; index < bars; index += 1) {
+      let sum = 0;
+      const start = index * samplesPerBar;
+      const end = Math.min(data.length, start + samplesPerBar);
+      for (let sampleIndex = start; sampleIndex < end; sampleIndex += 1) {
+        sum += Math.abs(data[sampleIndex] || 0);
+      }
+      const avg = sum / Math.max(1, end - start);
+      const height = Math.max(10, Math.min(100, avg * 260));
+      const bar = document.createElement("div");
+      bar.className = "audio-waveform-bar flex-1 rounded-full bg-slate-500 dark:bg-slate-300";
+      bar.style.height = `${height}%`;
+      audioWaveform.appendChild(bar);
+    }
+    audioTimelineHint.classList.add("hidden");
+    updateAudioClipWindowPosition();
+  }
+
+  function getAudioStartFromTimelineEvent(event, dragOffsetPx = 0) {
+    if (!audioTimeline || !selectedAudioBuffer) return 0;
+    const rect = audioTimeline.getBoundingClientRect();
+    const duration = selectedAudioBuffer.duration || 20;
+    const clipWidthPx = rect.width * Math.min(1, 20 / duration);
+    const rawLeft = event.clientX - rect.left - dragOffsetPx;
+    const maxLeft = Math.max(0, rect.width - clipWidthPx);
+    const clampedLeft = Math.min(Math.max(rawLeft, 0), maxLeft);
+    return maxLeft > 0 ? (clampedLeft / maxLeft) * getAudioMaxClipStart() : 0;
+  }
+
+  function beginAudioClipDrag(event) {
+    if (!selectedAudioBuffer || !audioClipWindow) return;
+    event.preventDefault();
+    const windowRect = audioClipWindow.getBoundingClientRect();
+    audioClipDragState = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - windowRect.left,
+    };
+    audioClipWindow.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveAudioClipDrag(event) {
+    if (!audioClipDragState) return;
+    setAudioClipStart(getAudioStartFromTimelineEvent(event, audioClipDragState.offsetX));
+  }
+
+  function endAudioClipDrag(event) {
+    if (!audioClipDragState) return;
+    audioClipWindow?.releasePointerCapture?.(event.pointerId);
+    audioClipDragState = null;
+  }
+
+  function handleAudioTimelineClick(event) {
+    if (!selectedAudioBuffer || event.target === audioClipWindow || audioClipWindow?.contains(event.target)) {
+      return;
+    }
+    if (!audioTimeline || !selectedAudioBuffer) return;
+    const rect = audioTimeline.getBoundingClientRect();
+    const duration = selectedAudioBuffer.duration || 20;
+    const clipWidthPx = rect.width * Math.min(1, 20 / duration);
+    setAudioClipStart(getAudioStartFromTimelineEvent(event, clipWidthPx / 2));
+  }
+
+  function handleAudioClipKeyboard(event) {
+    if (!selectedAudioBuffer) return;
+    const current = Number.parseFloat(audioClipStartInput?.value || "0") || 0;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setAudioClipStart(current - 1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setAudioClipStart(current + 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setAudioClipStart(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setAudioClipStart(getAudioMaxClipStart());
+    }
+  }
+
+  function resetAudioFormState() {
+    selectedAudioFile = null;
+    selectedAudioBuffer = null;
+    if (previewAudioElement) {
+      previewAudioElement.pause();
+      previewAudioElement = null;
+    }
+    if (audioFileMeta) audioFileMeta.textContent = "Nenhum arquivo selecionado.";
+    if (audioClipStartInput) {
+      audioClipStartInput.value = "0";
+      audioClipStartInput.max = "0";
+      audioClipStartInput.disabled = true;
+    }
+    renderAudioWaveform(null);
+    if (previewAudioClipBtn) previewAudioClipBtn.disabled = true;
+    if (saveAudioTrackBtn) saveAudioTrackBtn.disabled = true;
+    updateAudioClipRangeLabel();
+  }
+
+  async function decodeSelectedAudioFile(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) throw new Error("audio_context_unavailable");
+    const context = new AudioContextCtor();
+    try {
+      return await context.decodeAudioData(arrayBuffer.slice(0));
+    } finally {
+      if (typeof context.close === "function") context.close();
+    }
+  }
+
+  function encodeAudioBufferToWav(audioBuffer, startSeconds, durationSeconds = 20) {
+    const sampleRate = audioBuffer.sampleRate;
+    const channels = Math.min(2, audioBuffer.numberOfChannels || 1);
+    const startFrame = Math.max(0, Math.floor(startSeconds * sampleRate));
+    const frameCount = Math.min(
+      Math.floor(durationSeconds * sampleRate),
+      Math.max(0, audioBuffer.length - startFrame)
+    );
+    const bytesPerSample = 2;
+    const blockAlign = channels * bytesPerSample;
+    const dataSize = frameCount * blockAlign;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    let offset = 0;
+    const writeString = (value) => {
+      for (let i = 0; i < value.length; i += 1) {
+        view.setUint8(offset + i, value.charCodeAt(i));
+      }
+      offset += value.length;
+    };
+    writeString("RIFF");
+    view.setUint32(offset, 36 + dataSize, true);
+    offset += 4;
+    writeString("WAVE");
+    writeString("fmt ");
+    view.setUint32(offset, 16, true);
+    offset += 4;
+    view.setUint16(offset, 1, true);
+    offset += 2;
+    view.setUint16(offset, channels, true);
+    offset += 2;
+    view.setUint32(offset, sampleRate, true);
+    offset += 4;
+    view.setUint32(offset, sampleRate * blockAlign, true);
+    offset += 4;
+    view.setUint16(offset, blockAlign, true);
+    offset += 2;
+    view.setUint16(offset, 16, true);
+    offset += 2;
+    writeString("data");
+    view.setUint32(offset, dataSize, true);
+    offset += 4;
+
+    const channelData = Array.from({ length: channels }, (_, index) =>
+      audioBuffer.getChannelData(Math.min(index, audioBuffer.numberOfChannels - 1))
+    );
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) {
+        const sample = Math.max(-1, Math.min(1, channelData[channel][startFrame + frame] || 0));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+    }
+
+    return new Blob([buffer], { type: "audio/wav" });
+  }
+
+  async function blobToBase64(blob) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    return dataUrl.split(",")[1] || "";
+  }
+
+  async function loadAudioTracks() {
+    refreshAudioSelects();
+    if (!currentUser) return;
+    try {
+      const query = canManageAudioTracks() ? "?includeInactive=true" : "";
+      const res = await apiFetch(`${API_BASE}/audio-tracks${query}`);
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "fetch-audio-tracks-error");
+        throw new Error(reason);
+      }
+      const data = await res.json();
+      audioTracks = Array.isArray(data) ? data : [];
+      refreshAudioSelects();
+      renderAudioTracksTable();
+    } catch (error) {
+      console.error("Erro ao carregar audios:", error);
+      renderAudioTracksTable("Erro ao carregar audios.");
+    }
+  }
+
+  function renderAudioTracksTable(message = "") {
+    if (!audioTracksTableBody) return;
+    if (!canAccessAudiosMenu()) {
+      audioTracksTableBody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-500">Sem permissao para gerenciar audios.</td></tr>`;
+      return;
+    }
+    if (message) {
+      audioTracksTableBody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-500">${message}</td></tr>`;
+      return;
+    }
+    if (!audioTracks.length) {
+      audioTracksTableBody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-500">Nenhum audio cadastrado.</td></tr>`;
+      return;
+    }
+    audioTracksTableBody.innerHTML = "";
+    audioTracks.forEach((track) => {
+      const tr = document.createElement("tr");
+      tr.className = "text-slate-700 dark:text-slate-200";
+      tr.innerHTML = `
+        <td class="py-3 pr-4 font-semibold">${track.name || "-"}</td>
+        <td class="py-3 pr-4">${track.durationSeconds || 20}s</td>
+        <td class="py-3 pr-4">${track.active === false ? "Inativo" : "Ativo"}</td>
+        <td class="py-3 text-right">
+          <button type="button" data-action="play" class="mr-2 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+            <i class="fas fa-play"></i>
+          </button>
+          <button type="button" data-action="toggle" class="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+            ${track.active === false ? "Ativar" : "Desativar"}
+          </button>
+        </td>
+      `;
+      tr.querySelector('[data-action="play"]')?.addEventListener("click", () => {
+        const audio = new Audio(track.publicUrl);
+        audio.play().catch((error) => {
+          console.error("Erro ao tocar audio cadastrado:", error);
+          alert("Nao foi possivel tocar esse audio. Verifique se o bucket esta publico.");
+        });
+      });
+      tr.querySelector('[data-action="toggle"]')?.addEventListener("click", () => {
+        updateAudioTrackStatus(track, track.active === false);
+      });
+      audioTracksTableBody.appendChild(tr);
+    });
+  }
+
+  async function handleAudioFileSelected() {
+    const file = audioFileInput?.files?.[0];
+    resetAudioFormState();
+    if (!file) return;
+    selectedAudioFile = file;
+    try {
+      selectedAudioBuffer = await decodeSelectedAudioFile(file);
+      const duration = selectedAudioBuffer.duration || 0;
+      if (duration < 20) {
+        alert("O audio precisa ter pelo menos 20 segundos.");
+        resetAudioFormState();
+        return;
+      }
+      const maxStart = Math.max(0, duration - 20);
+      if (audioFileMeta) {
+        audioFileMeta.textContent = `${file.name} | ${formatAudioSeconds(duration)} | trecho de 20s`;
+      }
+      if (audioClipStartInput) {
+        audioClipStartInput.max = String(maxStart.toFixed(1));
+        audioClipStartInput.value = "0";
+        audioClipStartInput.disabled = maxStart <= 0;
+      }
+      renderAudioWaveform(selectedAudioBuffer);
+      if (previewAudioClipBtn) previewAudioClipBtn.disabled = false;
+      if (saveAudioTrackBtn) saveAudioTrackBtn.disabled = false;
+      if (audioTrackNameInput && !audioTrackNameInput.value.trim()) {
+        audioTrackNameInput.value = file.name.replace(/\.[^.]+$/, "");
+      }
+      updateAudioClipRangeLabel();
+    } catch (error) {
+      console.error("Erro ao preparar audio:", error);
+      alert("Nao foi possivel ler esse arquivo de audio.");
+      resetAudioFormState();
+    }
+  }
+
+  function previewSelectedAudioClip() {
+    if (!selectedAudioBuffer) return;
+    const start = Number.parseFloat(audioClipStartInput?.value || "0") || 0;
+    const clipBlob = encodeAudioBufferToWav(selectedAudioBuffer, start, 20);
+    const url = URL.createObjectURL(clipBlob);
+    if (previewAudioElement) previewAudioElement.pause();
+    previewAudioElement = new Audio(url);
+    previewAudioElement.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+    previewAudioElement.play();
+  }
+
+  async function saveAudioTrack(event) {
+    event.preventDefault();
+    if (!canManageAudioTracks()) {
+      alert("Sem permissao para gerenciar audios.");
+      return;
+    }
+    if (!selectedAudioBuffer || !selectedAudioFile) {
+      alert("Selecione um arquivo de audio.");
+      return;
+    }
+    const name = String(audioTrackNameInput?.value || "").trim();
+    if (!name) {
+      alert("Informe o nome da musica.");
+      return;
+    }
+    const start = Number.parseFloat(audioClipStartInput?.value || "0") || 0;
+    const clipBlob = encodeAudioBufferToWav(selectedAudioBuffer, start, 20);
+    const audioBase64 = await blobToBase64(clipBlob);
+    if (saveAudioTrackBtn) {
+      saveAudioTrackBtn.disabled = true;
+      saveAudioTrackBtn.innerHTML = '<i class="fas fa-spinner animate-spin"></i> Salvando...';
+    }
+    try {
+      const res = await apiFetch(`${API_BASE}/audio-tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          audioBase64,
+          mimeType: "audio/wav",
+          durationSeconds: 20,
+          originalFileName: selectedAudioFile.name,
+        }),
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "save-audio-track-error");
+        throw new Error(reason);
+      }
+      alert("Audio salvo com sucesso.");
+      audioForm?.reset();
+      resetAudioFormState();
+      await loadAudioTracks();
+    } catch (error) {
+      console.error("Erro ao salvar audio:", error);
+      alert("Erro ao salvar audio. Confira a configuracao do Supabase Storage.");
+    } finally {
+      if (saveAudioTrackBtn) {
+        saveAudioTrackBtn.innerHTML = '<i class="fas fa-save"></i> Salvar audio';
+        saveAudioTrackBtn.disabled = !selectedAudioBuffer;
+      }
+    }
+  }
+
+  async function updateAudioTrackStatus(track, active) {
+    try {
+      const res = await apiFetch(`${API_BASE}/audio-tracks/${track.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active }),
+      });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "update-audio-track-error");
+        throw new Error(reason);
+      }
+      await loadAudioTracks();
+    } catch (error) {
+      console.error("Erro ao atualizar audio:", error);
+      alert("Erro ao atualizar audio.");
     }
   }
 
@@ -3057,7 +3616,7 @@
     }
   }
 
-  async function loadDashboardMonitorInfo() {
+  async function loadDashboardMonitorInfo(options = {}) {
     if (!dashboardDbStatus || !dashboardDbLatency || !dashboardOpenAlerts || !dashboardAlertList) return;
 
     const canSeeDb = canViewDashboardDatabaseStatus();
@@ -3065,8 +3624,30 @@
     const canSeeWithoutSchedule = canViewDashboardSchoolsWithoutSchedule();
     const canSeeMonitorAlerts = canViewDashboardMonitorAlerts();
     const canSeeHttpMetrics = canViewDashboardHttpMetrics();
-    const shouldFetchAlerts = canSeeOpenAlerts || canSeeMonitorAlerts;
     const shouldFetchMonitor = canSeeWithoutSchedule || canSeeHttpMetrics;
+    const shouldFetchAlerts = (canSeeOpenAlerts || canSeeMonitorAlerts) && !shouldFetchMonitor;
+    const force = options.force === true;
+    const nowMs = Date.now();
+    const monitorCacheKey = [
+      currentUser?.id || "anonymous",
+      currentUser?.role || "none",
+      getCurrentSchoolId() || "none",
+      canFilterDashboardHttpMetrics() ? dashboardHttpMethodFilter?.value || "ALL" : "ALL",
+      canFilterDashboardHttpMetrics() ? dashboardHttpWindowFilter?.value || "60" : "60",
+      canFilterDashboardHttpMetrics() ? dashboardHttpTopNFilter?.value || "10" : "10",
+    ].join("|");
+
+    if (!force && dashboardMonitorInFlight) {
+      return dashboardMonitorInFlight;
+    }
+
+    if (
+      !force &&
+      dashboardMonitorLastCacheKey === monitorCacheKey &&
+      nowMs - dashboardMonitorLastLoadedAt < DASHBOARD_MONITOR_DEDUPE_MS
+    ) {
+      return;
+    }
 
     if (!canSeeDb) {
       dashboardDbStatus.textContent = "--";
@@ -3075,31 +3656,6 @@
       if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
       if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
       resetDashboardHttpMetrics("Sem permissao para visualizar metricas HTTP.");
-    } else {
-      try {
-        const healthRes = await fetch(`${API_BASE}/health`);
-        if (!healthRes.ok) throw new Error("health-check-failed");
-        const health = await healthRes.json();
-        const dbStatus = health?.database?.status === "up" ? "Banco online" : "Banco indisponivel";
-        dashboardDbStatus.textContent = dbStatus;
-        dashboardDbStatus.className =
-          health?.database?.status === "up"
-            ? "mt-2 text-xl font-extrabold text-emerald-600"
-            : "mt-2 text-xl font-extrabold text-rose-600";
-        const latency = Number.isFinite(health?.database?.latencyMs)
-          ? `${health.database.latencyMs} ms`
-          : "--";
-        dashboardDbLatency.textContent = `Latencia: ${latency}`;
-      } catch (_error) {
-        dashboardDbStatus.textContent = "Banco indisponivel";
-        dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-rose-600";
-        dashboardDbLatency.textContent = "Latencia: --";
-        if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
-        if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
-        if (canSeeHttpMetrics) {
-          resetDashboardHttpMetrics("Sem dados enquanto o banco estiver indisponivel.");
-        }
-      }
     }
 
     if (!currentUser) {
@@ -3108,17 +3664,24 @@
       dashboardMonitorCheckedAt.textContent = "Ultima verificacao: --";
       if (dashboardPlaybackFailures) dashboardPlaybackFailures.textContent = "Falhas de toque (24h): --";
       if (dashboardPendingApprovals) dashboardPendingApprovals.textContent = "Aprovacoes pendentes: --";
+      if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
+      if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
       if (canSeeMonitorAlerts) {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Faca login para visualizar alertas.</li>`;
       } else {
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
       }
       resetDashboardHttpMetrics("Faca login para visualizar metricas HTTP.");
-      await loadDashboardOperationalHistory();
+      renderOperationalHistoryChart([]);
+      if (dashboardOperationalMeta) dashboardOperationalMeta.textContent = "Faca login para carregar o historico.";
+      dashboardMonitorLastCacheKey = monitorCacheKey;
+      dashboardMonitorLastLoadedAt = nowMs;
       return;
     }
 
-    try {
+    const runLoad = (async () => {
+      let monitorPayload = null;
+
       const methodFilter = canFilterDashboardHttpMetrics()
         ? String(dashboardHttpMethodFilter?.value || "ALL").toUpperCase()
         : "ALL";
@@ -3128,6 +3691,37 @@
       const topNFilter = canFilterDashboardHttpMetrics()
         ? Number.parseInt(String(dashboardHttpTopNFilter?.value || "10"), 10)
         : 10;
+      const usesDefaultHttpMetricsFilters =
+        methodFilter === "ALL" && windowMinutesFilter === 60 && topNFilter === 10;
+
+      if (canSeeDb && !shouldFetchMonitor) {
+        try {
+          const healthRes = await fetch(`${API_BASE}/health`);
+          if (!healthRes.ok) throw new Error("health-check-failed");
+          const health = await healthRes.json();
+          const dbStatus = health?.database?.status === "up" ? "Banco online" : "Banco indisponivel";
+          dashboardDbStatus.textContent = dbStatus;
+          dashboardDbStatus.className =
+            health?.database?.status === "up"
+              ? "mt-2 text-xl font-extrabold text-emerald-600"
+              : "mt-2 text-xl font-extrabold text-rose-600";
+          const latency = Number.isFinite(health?.database?.latencyMs)
+            ? `${health.database.latencyMs} ms`
+            : "--";
+          dashboardDbLatency.textContent = `Latencia: ${latency}`;
+        } catch (_error) {
+          dashboardDbStatus.textContent = "Banco indisponivel";
+          dashboardDbStatus.className = "mt-2 text-xl font-extrabold text-rose-600";
+          dashboardDbLatency.textContent = "Latencia: --";
+          if (dashboardApiUptime) dashboardApiUptime.textContent = "Uptime API: --";
+          if (dashboardLastSweeps) dashboardLastSweeps.textContent = "Ultimas execucoes: --";
+          if (canSeeHttpMetrics) {
+            resetDashboardHttpMetrics("Sem dados enquanto o banco estiver indisponivel.");
+          }
+        }
+      }
+
+      try {
       const httpMetricsParams = new URLSearchParams();
       httpMetricsParams.set("method", methodFilter);
       httpMetricsParams.set("windowMinutes", String(windowMinutesFilter));
@@ -3136,14 +3730,27 @@
       const [monitorRes, alertsRes, httpMetricsRes] = await Promise.all([
         shouldFetchMonitor ? apiFetch(`${API_BASE}/monitor/status`) : Promise.resolve(null),
         shouldFetchAlerts ? apiFetch(`${API_BASE}/alerts?status=open`) : Promise.resolve(null),
-        canSeeHttpMetrics
+        canSeeHttpMetrics && !usesDefaultHttpMetricsFilters
           ? apiFetch(`${API_BASE}/monitor/http-metrics?${httpMetricsParams.toString()}`)
           : Promise.resolve(null),
       ]);
 
-      let monitorPayload = null;
       if (monitorRes && monitorRes.ok) {
         monitorPayload = await monitorRes.json();
+      }
+
+      if (canSeeDb && monitorPayload?.database) {
+        const dbStatus =
+          monitorPayload.database.status === "up" ? "Banco online" : "Banco indisponivel";
+        dashboardDbStatus.textContent = dbStatus;
+        dashboardDbStatus.className =
+          monitorPayload.database.status === "up"
+            ? "mt-2 text-xl font-extrabold text-emerald-600"
+            : "mt-2 text-xl font-extrabold text-rose-600";
+        const latency = Number.isFinite(monitorPayload.database.latencyMs)
+          ? `${monitorPayload.database.latencyMs} ms`
+          : "--";
+        dashboardDbLatency.textContent = `Latencia: ${latency}`;
       }
 
       let httpMetricsPayload = null;
@@ -3158,7 +3765,10 @@
       }
 
       if (canSeeOpenAlerts) {
-        dashboardOpenAlerts.textContent = String(alerts.length);
+        const openAlertsValue = Number.isFinite(monitorPayload?.openAlertsTotal)
+          ? monitorPayload.openAlertsTotal
+          : alerts.length;
+        dashboardOpenAlerts.textContent = String(openAlertsValue);
       } else {
         dashboardOpenAlerts.textContent = "--";
       }
@@ -3256,6 +3866,14 @@
       }
 
       if (!alerts.length && !schoolsStatus.length) {
+        const openAlertsValue = Number.isFinite(monitorPayload?.openAlertsTotal)
+          ? monitorPayload.openAlertsTotal
+          : 0;
+        if (openAlertsValue > 0) {
+          dashboardAlertList.innerHTML = `<li class="rounded-xl bg-amber-100 px-3 py-2 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">${openAlertsValue} alerta(s) aberto(s).</li>`;
+          await loadDashboardOperationalHistory();
+          return;
+        }
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-emerald-100 px-3 py-2 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Nenhum alerta aberto.</li>`;
         await loadDashboardOperationalHistory();
         return;
@@ -3273,6 +3891,8 @@
         li.textContent = `${alertItem.schoolName || "Global"}: ${alertItem.message || "-"}`;
         dashboardAlertList.appendChild(li);
       });
+      dashboardMonitorLastCacheKey = monitorCacheKey;
+      dashboardMonitorLastLoadedAt = Date.now();
       await loadDashboardOperationalHistory();
     } catch (error) {
       console.error("Erro ao carregar monitoramento do dashboard:", error);
@@ -3298,6 +3918,18 @@
         dashboardAlertList.innerHTML = `<li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Sem permissao para visualizar alertas de monitoramento.</li>`;
       }
       await loadDashboardOperationalHistory();
+    }
+    })();
+
+    dashboardMonitorInFlight = runLoad;
+    try {
+      await runLoad;
+    } finally {
+      dashboardMonitorLastCacheKey = monitorCacheKey;
+      dashboardMonitorLastLoadedAt = Date.now();
+      if (dashboardMonitorInFlight === runLoad) {
+        dashboardMonitorInFlight = null;
+      }
     }
   }
 
@@ -3808,6 +4440,10 @@
       alert("Informe uma descricao.");
       return;
     }
+    if (!music) {
+      alert("Cadastre e selecione um audio antes de salvar o horario.");
+      return;
+    }
 
     try {
       const data = await fetchScheduleBySchoolId(schoolId);
@@ -4044,10 +4680,7 @@
       return;
     }
 
-    if (loginSubmitBtn) {
-      loginSubmitBtn.disabled = true;
-      loginSubmitBtn.textContent = "Entrando...";
-    }
+    setLoginLoading(true);
 
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
@@ -4067,8 +4700,9 @@
       setCurrentUser(data.user);
       hideAuthOverlay();
       await loadSchools();
+      await loadAudioTracks();
       await loadUsers();
-      await loadDashboardMonitorInfo();
+      await loadDashboardMonitorInfo({ force: true });
       switchSection("dashboard");
       broadcastAuthChanged(true);
       if (loginForm) loginForm.reset();
@@ -4076,10 +4710,7 @@
       console.error("Erro no login:", err);
       showLoginError("Credenciais invalidas ou usuario sem acesso.");
     } finally {
-      if (loginSubmitBtn) {
-        loginSubmitBtn.disabled = false;
-        loginSubmitBtn.textContent = "Entrar";
-      }
+      setLoginLoading(false);
     }
   }
 
@@ -4104,7 +4735,7 @@
       setCurrentUser(data.user);
       hideAuthOverlay();
       broadcastAuthChanged(true);
-      await loadDashboardMonitorInfo();
+      await loadDashboardMonitorInfo({ force: true });
       return true;
     } catch (err) {
       console.error("Sessao invalida:", err);
@@ -4169,6 +4800,10 @@
       event.preventDefault();
       switchSection("users");
     });
+    navAudios?.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchSection("audios");
+    });
     navAudits?.addEventListener("click", (event) => {
       event.preventDefault();
       switchSection("audit");
@@ -4203,6 +4838,17 @@
     applyUserPresetBtn?.addEventListener("click", applyUserPreset);
     resetUserOverridesBtn?.addEventListener("click", resetUserOverridesToProfileDefaults);
     userForm?.addEventListener("submit", saveUser);
+    audioFileInput?.addEventListener("change", handleAudioFileSelected);
+    audioClipStartInput?.addEventListener("input", updateAudioClipRangeLabel);
+    audioTimeline?.addEventListener("pointerdown", handleAudioTimelineClick);
+    audioClipWindow?.addEventListener("pointerdown", beginAudioClipDrag);
+    audioClipWindow?.addEventListener("pointermove", moveAudioClipDrag);
+    audioClipWindow?.addEventListener("pointerup", endAudioClipDrag);
+    audioClipWindow?.addEventListener("pointercancel", endAudioClipDrag);
+    audioClipWindow?.addEventListener("keydown", handleAudioClipKeyboard);
+    previewAudioClipBtn?.addEventListener("click", previewSelectedAudioClip);
+    audioForm?.addEventListener("submit", saveAudioTrack);
+    refreshAudioTracksBtn?.addEventListener("click", loadAudioTracks);
 
     saveTemplateBtn?.addEventListener("click", saveTemplateFromCurrentSchool);
     cloneTemplateBtn?.addEventListener("click", applySelectedTemplate);
@@ -4216,16 +4862,20 @@
     auditApplyFiltersBtn?.addEventListener("click", loadAuditLogs);
     refreshAuditBtn?.addEventListener("click", loadAuditLogs);
 
-    refreshDashboardMonitorBtn?.addEventListener("click", loadDashboardMonitorInfo);
-    refreshHttpMetricsBtn?.addEventListener("click", loadDashboardMonitorInfo);
+    refreshDashboardMonitorBtn?.addEventListener("click", () =>
+      loadDashboardMonitorInfo({ force: true })
+    );
+    refreshHttpMetricsBtn?.addEventListener("click", () =>
+      loadDashboardMonitorInfo({ force: true })
+    );
     dashboardHttpMethodFilter?.addEventListener("change", () => {
-      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo();
+      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo({ force: true });
     });
     dashboardHttpWindowFilter?.addEventListener("change", () => {
-      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo();
+      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo({ force: true });
     });
     dashboardHttpTopNFilter?.addEventListener("change", () => {
-      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo();
+      if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo({ force: true });
     });
 
     changePasswordBtn?.addEventListener("click", openChangePasswordModal);
@@ -4233,6 +4883,9 @@
     changePasswordForm?.addEventListener("submit", handleChangePasswordSubmit);
 
     loginForm?.addEventListener("submit", handleLoginSubmit);
+    toggleLoginPasswordBtn?.addEventListener("click", toggleLoginPasswordVisibility);
+    loginEmail?.addEventListener("input", () => showLoginError(""));
+    loginPassword?.addEventListener("input", () => showLoginError(""));
     logoutBtn?.addEventListener("click", logout);
     exitSimulationBtn?.addEventListener("click", exitSimulation);
 
@@ -4256,17 +4909,22 @@
     bindEvents();
     updateConfigClock();
     setInterval(updateConfigClock, 1000);
-    setInterval(loadDashboardMonitorInfo, 60000);
+    setInterval(() => {
+      const dashboardVisible = !dashboardSection?.classList.contains("hidden");
+      if (dashboardVisible && currentUser) {
+        loadDashboardMonitorInfo();
+      }
+    }, DASHBOARD_MONITOR_AUTO_REFRESH_MS);
 
     const authenticated = await restoreSession();
     if (authenticated) {
       await loadSchools();
+      await loadAudioTracks();
       await loadUsers();
       await loadAuditLogs();
       await loadDashboardMonitorInfo();
       switchSection("dashboard");
     } else {
-      await loadDashboardMonitorInfo();
       switchSection("dashboard");
     }
   }

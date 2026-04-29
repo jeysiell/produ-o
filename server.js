@@ -23,6 +23,11 @@ const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || "Admin@1234
 const DEFAULT_ADMIN_NAME = process.env.DEFAULT_ADMIN_NAME || "Super Admin";
 const SIMULATION_TOKEN_TTL = process.env.SIMULATION_TOKEN_TTL || "30m";
 const SERVER_STARTED_AT = new Date();
+const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "audio-tracks";
+const AUDIO_CLIP_DURATION_SECONDS = 20;
+const AUDIO_UPLOAD_MAX_BYTES = Number(process.env.AUDIO_UPLOAD_MAX_BYTES) || 8 * 1024 * 1024;
 
 const runtimeStats = {
   lastMonitoringSweepAt: null,
@@ -55,7 +60,7 @@ const WRITE_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA];
 const PERIODS = ["morning", "afternoon", "afternoonFriday"];
 
 const PERMISSION_KEYS = {
-  menus: ["dashboard", "config", "schools", "users", "audit"],
+  menus: ["dashboard", "config", "schools", "users", "audios", "audit"],
   features: [
     "dashboard_manual_section",
     "dashboard_manual_play",
@@ -77,6 +82,7 @@ const PERMISSION_KEYS = {
     "config_backup_export",
     "config_backup_import",
     "config_backup_restore",
+    "audio_manage",
     "users_create",
     "users_edit",
     "users_disable",
@@ -92,6 +98,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       config: true,
       schools: true,
       users: true,
+      audios: true,
       audit: true,
     },
     features: {
@@ -115,6 +122,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       config_backup_export: true,
       config_backup_import: true,
       config_backup_restore: true,
+      audio_manage: true,
       users_create: true,
       users_edit: true,
       users_disable: true,
@@ -128,6 +136,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       config: true,
       schools: false,
       users: true,
+      audios: true,
       audit: true,
     },
     features: {
@@ -151,6 +160,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       config_backup_export: true,
       config_backup_import: true,
       config_backup_restore: true,
+      audio_manage: true,
       users_create: true,
       users_edit: true,
       users_disable: true,
@@ -164,6 +174,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       config: true,
       schools: false,
       users: false,
+      audios: false,
       audit: true,
     },
     features: {
@@ -187,6 +198,7 @@ const ROLE_PERMISSION_DEFAULTS = {
       config_backup_export: true,
       config_backup_import: false,
       config_backup_restore: false,
+      audio_manage: false,
       users_create: false,
       users_edit: false,
       users_disable: false,
@@ -503,7 +515,7 @@ function clearLoginRateLimit(key) {
 
 app.disable("x-powered-by");
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "10mb" }));
 
 app.use("/api", (req, res, next) => {
   const candidateRequestId = String(req.get("x-request-id") || "").trim();
@@ -912,6 +924,63 @@ function mapScheduleChangeRequest(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapAudioTrack(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    storagePath: row.storage_path,
+    publicUrl: row.public_url,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    durationSeconds: row.duration_seconds,
+    active: row.active !== false,
+    createdBy: row.created_by,
+    createdByName: row.created_by_name || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function assertSupabaseStorageConfigured() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_STORAGE_BUCKET) {
+    const error = new Error("supabase_storage_not_configured");
+    error.code = "SUPABASE_STORAGE_NOT_CONFIGURED";
+    throw error;
+  }
+}
+
+function getSupabasePublicStorageUrl(storagePath) {
+  return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(
+    SUPABASE_STORAGE_BUCKET
+  )}/${String(storagePath || "").split("/").map(encodeURIComponent).join("/")}`;
+}
+
+async function uploadAudioClipToSupabase(storagePath, buffer, contentType) {
+  assertSupabaseStorageConfigured();
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(
+    SUPABASE_STORAGE_BUCKET
+  )}/${String(storagePath).split("/").map(encodeURIComponent).join("/")}`;
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": contentType,
+      "Cache-Control": "3600",
+      "x-upsert": "false",
+    },
+    body: buffer,
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    const error = new Error(`supabase_upload_failed:${response.status}`);
+    error.detail = detail;
+    throw error;
+  }
 }
 
 function canAutoApproveScheduleChanges(user) {
@@ -1605,6 +1674,22 @@ async function ensureEnterpriseSchema() {
     `);
 
     await client.query(`
+      CREATE TABLE IF NOT EXISTS audio_tracks (
+        id BIGSERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        storage_path TEXT NOT NULL UNIQUE,
+        public_url TEXT NOT NULL,
+        mime_type VARCHAR(100) NOT NULL DEFAULT 'audio/wav',
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        duration_seconds INTEGER NOT NULL DEFAULT 20,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
       CREATE TABLE IF NOT EXISTS alerts (
         id BIGSERIAL PRIMARY KEY,
         type VARCHAR(100) NOT NULL,
@@ -1686,6 +1771,9 @@ async function ensureEnterpriseSchema() {
     `);
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_school_backups_school_created_at ON school_backups(school_id, created_at DESC)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_audio_tracks_active_name ON audio_tracks(active, name)
     `);
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_schedule_change_requests_school_status ON schedule_change_requests(school_id, status, created_at DESC)
@@ -3147,6 +3235,224 @@ app.get("/api/templates", authenticate, requirePermission("menus.config"), async
     sendInternalError(res, "failed_to_list_templates", error);
   }
 });
+
+app.get("/api/audio-tracks", authenticate, async (req, res) => {
+  const includeInactive =
+    req.query.includeInactive === "true" &&
+    hasEffectivePermission(req.user, "features.audio_manage");
+  try {
+    const result = await pool.query(
+      `
+      SELECT at.id, at.name, at.storage_path, at.public_url, at.mime_type, at.size_bytes,
+             at.duration_seconds, at.active, at.created_by, at.created_at, at.updated_at,
+             u.name AS created_by_name
+      FROM audio_tracks at
+      LEFT JOIN users u ON u.id = at.created_by
+      ${includeInactive ? "" : "WHERE at.active = TRUE"}
+      ORDER BY at.name ASC
+      `
+    );
+    res.json(result.rows.map(mapAudioTrack));
+  } catch (error) {
+    console.error("GET /api/audio-tracks error:", error);
+    sendInternalError(res, "failed_to_list_audio_tracks", error);
+  }
+});
+
+app.post(
+  "/api/audio-tracks",
+  authenticate,
+  requirePermission("menus.audios"),
+  requirePermission("features.audio_manage"),
+  requireWriteAccess,
+  async (req, res) => {
+    const name = String(req.body?.name || "").trim();
+    const audioBase64 = String(req.body?.audioBase64 || "").trim();
+    const mimeType = String(req.body?.mimeType || "audio/wav").trim().toLowerCase();
+    const originalFileName = String(req.body?.originalFileName || "").trim();
+    const durationSeconds = Number.parseInt(
+      String(req.body?.durationSeconds || AUDIO_CLIP_DURATION_SECONDS),
+      10
+    );
+
+    if (!name) return res.status(400).json({ error: "name_is_required" });
+    if (!audioBase64) return res.status(400).json({ error: "audio_clip_required" });
+    if (!["audio/wav", "audio/wave", "audio/x-wav"].includes(mimeType)) {
+      return res.status(400).json({ error: "unsupported_audio_clip_type" });
+    }
+
+    let buffer;
+    try {
+      buffer = Buffer.from(audioBase64, "base64");
+    } catch (_error) {
+      return res.status(400).json({ error: "invalid_audio_clip" });
+    }
+
+    if (!buffer.length) return res.status(400).json({ error: "empty_audio_clip" });
+    if (buffer.length > AUDIO_UPLOAD_MAX_BYTES) {
+      return res.status(413).json({ error: "audio_clip_too_large" });
+    }
+
+    const safeName = slugify(name).slice(0, 80) || "audio";
+    const storagePath = `clips/${Date.now()}-${crypto.randomUUID()}-${safeName}.wav`;
+    const contentType = "audio/wav";
+
+    try {
+      await uploadAudioClipToSupabase(storagePath, buffer, contentType);
+      const publicUrl = getSupabasePublicStorageUrl(storagePath);
+      const result = await pool.query(
+        `
+        INSERT INTO audio_tracks (
+          name, storage_path, public_url, mime_type, size_bytes,
+          duration_seconds, active, created_by
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,TRUE,$7)
+        RETURNING id, name, storage_path, public_url, mime_type, size_bytes,
+                  duration_seconds, active, created_by, created_at, updated_at
+        `,
+        [
+          name,
+          storagePath,
+          publicUrl,
+          contentType,
+          buffer.length,
+          Number.isInteger(durationSeconds) ? durationSeconds : AUDIO_CLIP_DURATION_SECONDS,
+          req.user.id || null,
+        ]
+      );
+
+      const created = mapAudioTrack(result.rows[0]);
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.user.schoolId || null,
+        action: "create_audio_track",
+        resource: "audio_track",
+        resourceId: String(created.id),
+        afterData: {
+          name: created.name,
+          storagePath: created.storagePath,
+          sizeBytes: created.sizeBytes,
+          originalFileName,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
+      });
+
+      res.status(201).json(created);
+    } catch (error) {
+      if (error?.code === "SUPABASE_STORAGE_NOT_CONFIGURED") {
+        return res.status(503).json({ error: "supabase_storage_not_configured" });
+      }
+      console.error("POST /api/audio-tracks error:", error);
+      sendInternalError(res, "failed_to_create_audio_track", error);
+    }
+  }
+);
+
+app.patch(
+  "/api/audio-tracks/:id",
+  authenticate,
+  requirePermission("menus.audios"),
+  requirePermission("features.audio_manage"),
+  requireWriteAccess,
+  async (req, res) => {
+    const audioTrackId = toIntId(req.params.id);
+    if (!audioTrackId) return res.status(400).json({ error: "invalid_audio_track_id" });
+
+    const updates = [];
+    const values = [];
+    if (Object.prototype.hasOwnProperty.call(req.body, "name")) {
+      const name = String(req.body.name || "").trim();
+      if (!name) return res.status(400).json({ error: "name_cannot_be_empty" });
+      values.push(name);
+      updates.push(`name = $${values.length}`);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, "active")) {
+      values.push(Boolean(req.body.active));
+      updates.push(`active = $${values.length}`);
+    }
+    if (!updates.length) return res.status(400).json({ error: "no_fields_to_update" });
+
+    try {
+      values.push(audioTrackId);
+      const result = await pool.query(
+        `
+        UPDATE audio_tracks
+        SET ${updates.join(", ")}, updated_at = NOW()
+        WHERE id = $${values.length}
+        RETURNING id, name, storage_path, public_url, mime_type, size_bytes,
+                  duration_seconds, active, created_by, created_at, updated_at
+        `,
+        values
+      );
+      if (!result.rowCount) return res.status(404).json({ error: "audio_track_not_found" });
+
+      const updated = mapAudioTrack(result.rows[0]);
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.user.schoolId || null,
+        action: "update_audio_track",
+        resource: "audio_track",
+        resourceId: String(updated.id),
+        afterData: updated,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("PATCH /api/audio-tracks/:id error:", error);
+      sendInternalError(res, "failed_to_update_audio_track", error);
+    }
+  }
+);
+
+app.delete(
+  "/api/audio-tracks/:id",
+  authenticate,
+  requirePermission("menus.audios"),
+  requirePermission("features.audio_manage"),
+  requireWriteAccess,
+  async (req, res) => {
+    const audioTrackId = toIntId(req.params.id);
+    if (!audioTrackId) return res.status(400).json({ error: "invalid_audio_track_id" });
+
+    try {
+      const result = await pool.query(
+        `
+        UPDATE audio_tracks
+        SET active = FALSE, updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, name, storage_path, public_url, mime_type, size_bytes,
+                  duration_seconds, active, created_by, created_at, updated_at
+        `,
+        [audioTrackId]
+      );
+      if (!result.rowCount) return res.status(404).json({ error: "audio_track_not_found" });
+
+      const updated = mapAudioTrack(result.rows[0]);
+      const meta = getRequestMeta(req);
+      await writeAuditLog({
+        userId: req.user.id,
+        schoolId: req.user.schoolId || null,
+        action: "deactivate_audio_track",
+        resource: "audio_track",
+        resourceId: String(updated.id),
+        afterData: updated,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        meta: { requestId: meta.requestId },
+      });
+      res.json({ success: true, audioTrack: updated });
+    } catch (error) {
+      console.error("DELETE /api/audio-tracks/:id error:", error);
+      sendInternalError(res, "failed_to_deactivate_audio_track", error);
+    }
+  }
+);
 
 app.post(
   "/api/templates",

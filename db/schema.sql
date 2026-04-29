@@ -59,6 +59,20 @@ CREATE TABLE IF NOT EXISTS schedule_templates (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS audio_tracks (
+  id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  storage_path TEXT NOT NULL UNIQUE,
+  public_url TEXT NOT NULL,
+  mime_type VARCHAR(100) NOT NULL DEFAULT 'audio/wav',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  duration_seconds INTEGER NOT NULL DEFAULT 20,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
   id BIGSERIAL PRIMARY KEY,
   type VARCHAR(100) NOT NULL,
@@ -131,6 +145,9 @@ CREATE INDEX IF NOT EXISTS idx_alerts_status_school
 
 CREATE INDEX IF NOT EXISTS idx_school_backups_school_created_at
   ON school_backups (school_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_audio_tracks_active_name
+  ON audio_tracks (active, name);
 
 CREATE INDEX IF NOT EXISTS idx_schedule_change_requests_school_status
   ON schedule_change_requests (school_id, status, created_at DESC);

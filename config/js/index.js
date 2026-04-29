@@ -6,6 +6,8 @@ let audioContext = null;
 let currentSource = null;
 let countdownInterval = null;
 let dashboardSignalAudioEnabled = true;
+let dashboardAudioTracks = [];
+let dashboardAudioTracksLoaded = false;
 
 const API_BASE = "/api";
 const AUTH_TOKEN_STORAGE_KEY = "authToken";
@@ -54,6 +56,43 @@ function getAuthUser() {
   } catch (_err) {
     return null;
   }
+}
+
+function getAudioTrackByValue(value) {
+  return (dashboardAudioTracks || []).find((track) => track.value === value || track.url === value);
+}
+
+async function loadDashboardAudioTracks() {
+  if (typeof window.audioTracks !== "undefined" && Array.isArray(window.audioTracks)) {
+    dashboardAudioTracks = window.audioTracks;
+    dashboardAudioTracksLoaded = true;
+    return dashboardAudioTracks;
+  }
+  const token = getAuthToken();
+  if (!token) return [];
+  try {
+    const response = await apiFetchWithAuth(`${API_BASE}/audio-tracks`);
+    if (!response.ok) throw new Error("audio-tracks-fetch-error");
+    const data = await response.json();
+    dashboardAudioTracks = Array.isArray(data)
+      ? data
+          .filter((track) => track?.active !== false && track?.publicUrl)
+          .map((track) => ({
+            id: `audio-${track.id}`,
+            name: track.name,
+            value: track.publicUrl,
+            url: track.publicUrl,
+            active: true,
+            durationSeconds: track.durationSeconds || 20,
+          }))
+      : [];
+    dashboardAudioTracksLoaded = true;
+    window.audioTracks = dashboardAudioTracks;
+  } catch (error) {
+    console.error("Erro ao carregar audios:", error);
+    dashboardAudioTracks = [];
+  }
+  return dashboardAudioTracks;
 }
 
 function applyDashboardPermissions(user) {
@@ -127,6 +166,7 @@ async function loadSchedule() {
   }
 
   try {
+    await loadDashboardAudioTracks();
     const response = await apiFetchWithAuth(`${API_BASE}/schools/${schoolId}/schedule`);
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
@@ -217,10 +257,13 @@ async function reportPlaybackError(error, music, duration) {
   }
 }
 
-async function initAudio(music = "sino.mp3", duration = 12, volume = 0.9) {
+async function initAudio(music = "", duration = 12, volume = 0.9) {
   if (!dashboardSignalAudioEnabled) return;
 
   try {
+    if (!dashboardAudioTracksLoaded) {
+      await loadDashboardAudioTracks();
+    }
     if (!audioContext || audioContext.state === "closed") {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -236,25 +279,40 @@ async function initAudio(music = "sino.mp3", duration = 12, volume = 0.9) {
       currentSource = null;
     }
 
-    const audio = new Audio(`./assets/audio/${music}`);
-    const source = audioContext.createMediaElementSource(audio);
-    const gain = audioContext.createGain();
+    const audioUrl =
+      typeof window.getAudioTrackUrl === "function"
+        ? window.getAudioTrackUrl(music)
+        : getAudioTrackByValue(music)?.url || (String(music || "").startsWith("http") ? music : "");
+    if (!audioUrl) {
+      throw new Error("audio_track_not_found");
+    }
+    const audio = new Audio(audioUrl);
+    audio.preload = "auto";
+    const usingRemoteAudio = /^https?:\/\//i.test(audioUrl);
+    let source = null;
+    let gain = null;
 
-    source.connect(gain);
-    gain.connect(audioContext.destination);
+    if (!usingRemoteAudio) {
+      source = audioContext.createMediaElementSource(audio);
+      gain = audioContext.createGain();
+      source.connect(gain);
+      gain.connect(audioContext.destination);
 
-    const now = audioContext.currentTime;
-    gain.gain.setValueAtTime(volume, now);
-    gain.gain.setValueAtTime(volume, now + duration - 1);
-    gain.gain.linearRampToValueAtTime(0, now + duration);
+      const now = audioContext.currentTime;
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.setValueAtTime(volume, now + duration - 1);
+      gain.gain.linearRampToValueAtTime(0, now + duration);
+    } else {
+      audio.volume = volume;
+    }
 
     await audio.play();
     currentSource = { audio, source, gain };
 
     setTimeout(() => {
       audio.pause();
-      source.disconnect();
-      gain.disconnect();
+      source?.disconnect();
+      gain?.disconnect();
       currentSource = null;
     }, duration * 1000);
   } catch (err) {
@@ -270,14 +328,9 @@ function renderScheduleByPeriod(period) {
     afternoonFriday: "scheduleTable-afternoonFriday",
   };
 
-  const musicLabels = {
-    "musica1.mp3": "Tu Me Sondas",
-    "musica2.mp3": "Eu Amo Minha Escola",
-    "musica3.mp3": "My Lighthouse",
-    "musica4.mp3": "Amor Teimoso",
-    "musica5.mp3": "Minha vida e uma viagem",
-    "musica6.mp3": "A Biblia",
-  };
+  const musicLabels = Object.fromEntries(
+    (dashboardAudioTracks || []).map((track) => [track.value, track.name])
+  );
 
   Object.values(tableIds).forEach((id) => {
     const el = document.getElementById(id);
@@ -305,7 +358,12 @@ function renderScheduleByPeriod(period) {
         ? "bg-slate-50 dark:bg-slate-800 transition-colors"
         : "bg-white dark:bg-slate-900 transition-colors";
 
-    const friendlyMusic = musicLabels[signal.music] || signal.music || "Sino Padrao";
+    const friendlyMusic =
+      (typeof window.getAudioTrackLabel === "function"
+        ? window.getAudioTrackLabel(signal.music)
+        : musicLabels[signal.music] || getAudioTrackByValue(signal.music)?.name) ||
+      signal.music ||
+      "Sino Padrao";
 
     row.innerHTML = `
       <td class="py-3 px-4 w-10 text-center">
@@ -525,7 +583,8 @@ document
   .getElementById("btnManualPlay")
   ?.addEventListener("click", function manualPlayHandler() {
     if (this.disabled) return;
-    const music = document.getElementById("manualMusic")?.value || "musica1.mp3";
+    const music = document.getElementById("manualMusic")?.value || "";
+    if (!music) return;
     const duration = parseInt(document.getElementById("manualDuration")?.value, 10) || 12;
     const btn = this;
 
@@ -594,10 +653,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("auth:changed", (event) => {
     if (event?.detail?.authenticated) {
       applyDashboardPermissions(event?.detail?.user || getAuthUser());
+      dashboardAudioTracksLoaded = false;
+      loadDashboardAudioTracks().then(() => renderScheduleByPeriod(currentPeriod || "morning"));
       loadSchedule();
     } else {
       applyDashboardPermissions(null);
       resetDashboardState();
     }
+  });
+
+  window.addEventListener("audio:changed", (event) => {
+    dashboardAudioTracks = Array.isArray(event?.detail?.tracks) ? event.detail.tracks : [];
+    dashboardAudioTracksLoaded = true;
+    renderScheduleByPeriod(currentPeriod || "morning");
   });
 });
