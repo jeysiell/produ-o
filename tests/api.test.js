@@ -5,7 +5,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const request = require("supertest");
-const { app, pool } = require("../server");
+const { app, pool, __testUtils } = require("../server");
 
 function buildToken(userId, extras = {}) {
   return jwt.sign(
@@ -44,6 +44,35 @@ function installPoolMock(queryFn) {
 }
 
 describe("API security and permission flows", () => {
+  test("normalizeSchedulePayload merges duplicate times inside the same period", () => {
+    const payload = __testUtils.normalizeSchedulePayload({
+      morning: [],
+      afternoon: [
+        {
+          time: "15:00",
+          name: "INTERVALO - 2° AO 5° ANO",
+          music: "https://storage.example/audio.wav",
+          duration: 15,
+        },
+        {
+          time: "15:00",
+          name: "3° Aula: 6° ao 9° Ano",
+          music: "https://storage.example/audio.wav",
+          duration: 20,
+        },
+      ],
+      afternoonFriday: [],
+    });
+
+    expect(payload.afternoon).toHaveLength(1);
+    expect(payload.afternoon[0]).toEqual({
+      time: "15:00",
+      name: "INTERVALO - 2° AO 5° ANO / 3° Aula: 6° ao 9° Ano",
+      music: "https://storage.example/audio.wav",
+      duration: 20,
+    });
+  });
+
   test("POST /api/auth/login returns token for valid credentials", async () => {
     const password = "SenhaForte@123";
     const hash = await bcrypt.hash(password, 12);
@@ -179,5 +208,73 @@ describe("API security and permission flows", () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toBe("permission_denied");
+  });
+
+  test("GET /api/public/schools/:token/player returns public schedule without auth", async () => {
+    installPoolMock(async (sql, params) => {
+      const text = String(sql);
+      if (text.includes("WHERE (public_token = $1 OR slug = $1) AND active = TRUE")) {
+        expect(params).toEqual(["public-token"]);
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: 9,
+              name: "Escola Publica",
+              slug: "escola-publica",
+              timezone: "America/Sao_Paulo",
+              active: true,
+              public_token: "public-token",
+              created_at: new Date().toISOString(),
+            },
+          ],
+        };
+      }
+      if (text.includes("FROM schedules") && text.includes("WHERE school_id = $1")) {
+        expect(params).toEqual([9]);
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              period: "morning",
+              time: "07:30",
+              name: "Entrada",
+              music: "https://storage.example/audio.wav",
+              duration: 20,
+            },
+          ],
+        };
+      }
+      if (text.includes("FROM audio_tracks") && text.includes("WHERE active = TRUE")) {
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: 3,
+              name: "Sinal padrao",
+              public_url: "https://storage.example/sinal-padrao.wav",
+              duration_seconds: 20,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected query in public player test: ${text.slice(0, 90)}`);
+    });
+
+    const response = await request(app).get("/api/public/schools/public-token/player");
+
+    expect(response.status).toBe(200);
+    expect(response.body.school.name).toBe("Escola Publica");
+    expect(response.body.school.publicToken).toBeUndefined();
+    expect(response.body.schedule.morning).toHaveLength(1);
+    expect(response.body.schedule.morning[0].music).toBe("https://storage.example/audio.wav");
+    expect(response.body.audioTracks).toEqual([
+      {
+        id: "3",
+        name: "Sinal padrao",
+        publicUrl: "https://storage.example/sinal-padrao.wav",
+        durationSeconds: 20,
+      },
+    ]);
   });
 });

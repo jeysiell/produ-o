@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS schools (
   slug VARCHAR(255) NOT NULL UNIQUE,
   timezone VARCHAR(100) NOT NULL DEFAULT 'America/Sao_Paulo',
   active BOOLEAN NOT NULL DEFAULT TRUE,
+  public_token VARCHAR(80) UNIQUE,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -133,6 +134,9 @@ CREATE TABLE IF NOT EXISTS operational_daily_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_schedules_school_period_time
   ON schedules (school_id, period, time);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_public_token
+  ON schools (public_token);
 
 CREATE INDEX IF NOT EXISTS idx_users_school_id
   ON users (school_id);

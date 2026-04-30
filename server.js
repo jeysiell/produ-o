@@ -718,8 +718,13 @@ function mapSchool(row) {
     slug: row.slug,
     timezone: row.timezone,
     active: row.active,
+    publicToken: row.public_token || null,
     createdAt: row.created_at,
   };
+}
+
+function generateSchoolPublicToken() {
+  return crypto.randomBytes(24).toString("base64url");
 }
 
 function groupScheduleRows(rows) {
@@ -786,7 +791,46 @@ function normalizeSchedulePayload(payload) {
     });
   });
 
-  return result;
+  return mergeDuplicateScheduleTimes(result);
+}
+
+function mergeDuplicateScheduleTimes(scheduleObject) {
+  const merged = {
+    morning: [],
+    afternoon: [],
+    afternoonFriday: [],
+  };
+
+  PERIODS.forEach((period) => {
+    const byTime = new Map();
+    const items = Array.isArray(scheduleObject?.[period]) ? scheduleObject[period] : [];
+
+    items.forEach((item) => {
+      const existing = byTime.get(item.time);
+      if (!existing) {
+        const next = { ...item };
+        byTime.set(item.time, next);
+        merged[period].push(next);
+        return;
+      }
+
+      const nextName = String(item.name || "").trim();
+      const currentNames = String(existing.name || "")
+        .split(" / ")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (nextName && !currentNames.includes(nextName)) {
+        existing.name = [...currentNames, nextName].join(" / ");
+      }
+
+      if (!existing.music && item.music) {
+        existing.music = item.music;
+      }
+      existing.duration = Math.max(Number(existing.duration) || 15, Number(item.duration) || 15);
+    });
+  });
+
+  return merged;
 }
 
 function sendInternalError(res, errorCode, err) {
@@ -855,7 +899,7 @@ async function writeAuditLog(entry, client = pool) {
 async function getSchoolById(client, schoolId) {
   const result = await client.query(
     `
-    SELECT id, name, slug, timezone, active, created_at
+    SELECT id, name, slug, timezone, active, public_token, created_at
     FROM schools
     WHERE id = $1
     LIMIT 1
@@ -1630,8 +1674,14 @@ async function ensureEnterpriseSchema() {
         slug VARCHAR(255) NOT NULL UNIQUE,
         timezone VARCHAR(100) NOT NULL DEFAULT 'America/Sao_Paulo',
         active BOOLEAN NOT NULL DEFAULT TRUE,
+        public_token VARCHAR(80) UNIQUE,
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       )
+    `);
+
+    await client.query(`
+      ALTER TABLE schools
+      ADD COLUMN IF NOT EXISTS public_token VARCHAR(80)
     `);
 
     await client.query(`
@@ -1784,6 +1834,9 @@ async function ensureEnterpriseSchema() {
       CREATE INDEX IF NOT EXISTS idx_schedules_school_id ON schedules(school_id)
     `);
     await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_public_token ON schools(public_token)
+    `);
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id)
     `);
     await client.query(`
@@ -1804,6 +1857,28 @@ async function ensureEnterpriseSchema() {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_operational_daily_metrics_school_date ON operational_daily_metrics(school_id, metric_date DESC)
     `);
+
+    const schoolsWithoutPublicToken = await client.query(`
+      SELECT id
+      FROM schools
+      WHERE public_token IS NULL OR public_token = ''
+      ORDER BY id ASC
+    `);
+
+    for (const school of schoolsWithoutPublicToken.rows) {
+      let updated = false;
+      for (let attempt = 0; attempt < 5 && !updated; attempt += 1) {
+        try {
+          await client.query("UPDATE schools SET public_token = $1 WHERE id = $2", [
+            generateSchoolPublicToken(),
+            school.id,
+          ]);
+          updated = true;
+        } catch (error) {
+          if (error?.code !== "23505" || attempt === 4) throw error;
+        }
+      }
+    }
 
     await client.query("COMMIT");
   } catch (error) {
@@ -2614,7 +2689,7 @@ app.get("/api/schools", authenticate, async (req, res) => {
       const whereSql = includeInactive ? "" : "WHERE active = TRUE";
       const result = await pool.query(
         `
-        SELECT id, name, slug, timezone, active, created_at
+        SELECT id, name, slug, timezone, active, public_token, created_at
         FROM schools
         ${whereSql}
         ORDER BY name ASC
@@ -2629,7 +2704,7 @@ app.get("/api/schools", authenticate, async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT id, name, slug, timezone, active, created_at
+      SELECT id, name, slug, timezone, active, public_token, created_at
       FROM schools
       WHERE id = $1
       ORDER BY name ASC
@@ -2659,11 +2734,11 @@ app.post("/api/schools", authenticate, requireRoles([ROLE_SUPERADMIN]), async (r
 
     const result = await pool.query(
       `
-      INSERT INTO schools (name, slug, timezone, active)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, name, slug, timezone, active, created_at
+      INSERT INTO schools (name, slug, timezone, active, public_token)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, name, slug, timezone, active, public_token, created_at
       `,
-      [name, slug, timezone, active]
+      [name, slug, timezone, active, generateSchoolPublicToken()]
     );
 
     const created = mapSchool(result.rows[0]);
@@ -2736,7 +2811,7 @@ app.patch("/api/schools/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), asy
       UPDATE schools
       SET ${updates.join(", ")}
       WHERE id = $${values.length}
-      RETURNING id, name, slug, timezone, active, created_at
+      RETURNING id, name, slug, timezone, active, public_token, created_at
       `,
       values
     );
@@ -2778,7 +2853,7 @@ app.delete("/api/schools/:id", authenticate, requireRoles([ROLE_SUPERADMIN]), as
       UPDATE schools
       SET active = FALSE
       WHERE id = $1
-      RETURNING id, name, slug, timezone, active, created_at
+      RETURNING id, name, slug, timezone, active, public_token, created_at
       `,
       [schoolId]
     );
@@ -4967,11 +5042,70 @@ app.get(
   }
 );
 
+app.get("/api/public/schools/:identifier/player", async (req, res) => {
+  try {
+    const identifier = String(req.params.identifier || "").trim();
+    if (!identifier) return res.status(400).json({ error: "invalid_public_link" });
+
+    const schoolResult = await pool.query(
+      `
+      SELECT id, name, slug, timezone, active, public_token, created_at
+      FROM schools
+      WHERE (public_token = $1 OR slug = $1) AND active = TRUE
+      LIMIT 1
+      `,
+      [identifier]
+    );
+
+    if (!schoolResult.rowCount) {
+      return res.status(404).json({ error: "public_school_not_found" });
+    }
+
+    const school = schoolResult.rows[0];
+    const schedule = await getScheduleObjectBySchoolId(pool, school.id);
+    const audioTracksResult = await pool.query(
+      `
+      SELECT id, name, public_url, duration_seconds
+      FROM audio_tracks
+      WHERE active = TRUE
+      ORDER BY name ASC
+      `
+    );
+
+    return res.json({
+      school: {
+        id: String(school.id),
+        name: school.name,
+        slug: school.slug,
+        timezone: school.timezone,
+      },
+      schedule,
+      audioTracks: audioTracksResult.rows.map((track) => ({
+        id: String(track.id),
+        name: track.name,
+        publicUrl: track.public_url,
+        durationSeconds: track.duration_seconds,
+      })),
+    });
+  } catch (error) {
+    console.error("GET /api/public/schools/:identifier/player error:", error);
+    sendInternalError(res, "failed_to_load_public_player", error);
+  }
+});
+
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "api_route_not_found" });
 });
 
 app.use(express.static(path.resolve(__dirname)));
+
+app.get("/sinal/:schoolSlug/:token", (_req, res) => {
+  res.sendFile(path.resolve(__dirname, "public-player.html"));
+});
+
+app.get("/sinal/:token", (_req, res) => {
+  res.sendFile(path.resolve(__dirname, "public-player.html"));
+});
 
 app.get("/", (_req, res) => {
   res.sendFile(path.resolve(__dirname, "index.html"));
@@ -5039,4 +5173,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, initializeApp, pool };
+module.exports = { app, initializeApp, pool, __testUtils: { normalizeSchedulePayload } };

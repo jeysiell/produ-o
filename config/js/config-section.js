@@ -598,6 +598,53 @@
     return fallback === null ? null : String(fallback || "").trim();
   }
 
+  function getSchoolPublicSignalUrl(school) {
+    const slug = String(school?.slug || "").trim();
+    const token = String(school?.publicToken || "").trim();
+    if (!slug && !token) return "";
+    const friendlyName = String(slug || school?.name || "escola")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return `${window.location.origin}/sinal/${encodeURIComponent(friendlyName || token)}`;
+  }
+
+  async function copyTextToClipboard(text) {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+
+  async function copySchoolPublicSignalLink(school) {
+    const url = getSchoolPublicSignalUrl(school);
+    if (!url) {
+      alert("Esta escola ainda nao possui link publico. Recarregue a pagina apos a migracao do banco.");
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(url);
+      alert(`Link publico copiado:\n${url}`);
+    } catch (error) {
+      console.error("Erro ao copiar link publico:", error);
+      alert(`Nao foi possivel copiar automaticamente. Link publico:\n${url}`);
+    }
+  }
+
   function formatRoleLabel(role) {
     const labels = {
       [ROLE_SUPERADMIN]: "Superadmin",
@@ -1593,6 +1640,9 @@
             <button type="button" data-action="redirect" class="text-emerald-600 transition hover:text-emerald-800" title="Abrir configuracoes da escola">
               <i class="fas fa-arrow-right"></i>
             </button>
+            <button type="button" data-action="copy-public-link" class="text-slate-600 transition hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" title="Copiar link publico dos sinais">
+              <i class="fas fa-link"></i>
+            </button>
             <button type="button" data-action="edit" class="text-blue-600 transition hover:text-blue-800" title="Editar">
               <i class="fas fa-pen"></i>
             </button>
@@ -1605,6 +1655,10 @@
 
       tr.querySelector('[data-action="redirect"]')?.addEventListener("click", () => {
         redirectToSchool(school);
+      });
+
+      tr.querySelector('[data-action="copy-public-link"]')?.addEventListener("click", () => {
+        copySchoolPublicSignalLink(school);
       });
 
       tr.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
