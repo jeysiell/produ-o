@@ -14,7 +14,6 @@ const AUTH_TOKEN_STORAGE_KEY = "authToken";
 const AUTH_USER_STORAGE_KEY = "authUser";
 const CURRENT_SCHOOL_STORAGE_KEY = "currentSchoolId";
 const PERIODS = ["morning", "afternoon", "afternoonFriday"];
-const ROLE_SOMENTE_LEITURA = "somente_leitura";
 
 function getAuthToken() {
   if (typeof window.getAuthToken === "function") {
@@ -521,68 +520,6 @@ function initClock() {
   }, 1000);
 }
 
-async function wakeUpAPI() {
-  const overlay = document.getElementById("overlayWakeup");
-  const status = document.getElementById("statusWake");
-  const button = document.getElementById("btnWakeOk");
-  const icon = document.getElementById("wakeIcon");
-
-  if (!overlay || !status || !button || !icon) return;
-
-  try {
-    status.textContent = "Iniciando servidor...";
-    const response = await fetch(`${API_BASE}/health`);
-    if (!response.ok) throw new Error("health-error");
-
-    status.textContent = "Sistema online";
-    icon.classList.remove(
-      "animate-spin",
-      "border-4",
-      "border-blue-500",
-      "border-t-transparent",
-      "rounded-full"
-    );
-
-    icon.innerHTML = '<i class="fas fa-check text-white text-xl"></i>';
-    icon.classList.add(
-      "bg-green-500",
-      "flex",
-      "items-center",
-      "justify-center",
-      "rounded-full",
-      "scale-0"
-    );
-
-    setTimeout(() => {
-      icon.classList.add("transition", "duration-300", "scale-100");
-    }, 50);
-
-    button.disabled = false;
-    button.classList.remove("opacity-50", "cursor-not-allowed");
-    button.classList.add("bg-green-600", "hover:bg-green-700");
-
-    button.addEventListener("click", () => {
-      overlay.classList.add("opacity-0");
-      setTimeout(() => {
-        overlay.style.display = "none";
-      }, 300);
-    });
-  } catch (err) {
-    status.textContent = "Erro ao conectar";
-    icon.classList.remove("animate-spin");
-    icon.innerHTML = '<i class="fas fa-times text-white text-xl"></i>';
-    icon.classList.add(
-      "bg-red-500",
-      "flex",
-      "items-center",
-      "justify-center",
-      "rounded-full"
-    );
-
-    console.error("Wake error:", err);
-  }
-}
-
 document
   .getElementById("btnManualPlay")
   ?.addEventListener("click", function manualPlayHandler() {
@@ -623,17 +560,16 @@ document
   });
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await wakeUpAPI();
+  initDarkMode();
+  initClock();
+
   currentPeriod = PERIODS.includes(detectCurrentPeriod()) ? detectCurrentPeriod() : "morning";
   applyDashboardPermissions(getAuthUser());
   if (getAuthToken()) {
-    await loadSchedule();
+    loadSchedule();
   } else {
     resetDashboardState();
   }
-
-  initDarkMode();
-  initClock();
 
   document.getElementById("menuBtn")?.addEventListener("click", () => {
     document.getElementById("sidebar")?.classList.remove("-translate-x-full");

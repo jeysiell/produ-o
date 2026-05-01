@@ -237,7 +237,7 @@
   const USER_PERMISSION_PRESETS = {
     sinais: {
       label: "Sinais (Visualizacao + Audio)",
-      role: ROLE_SOMENTE_LEITURA,
+      role: ROLE_ADMIN_ESCOLA,
       permissions: {
         menus: {
           dashboard: true,
@@ -2437,13 +2437,9 @@
     const roleOptions = isSuperAdmin()
       ? [
           { value: ROLE_ADMIN_ESCOLA, label: "Admin Escola" },
-          { value: ROLE_SOMENTE_LEITURA, label: "Somente Leitura" },
           { value: ROLE_SUPERADMIN, label: "Superadmin" },
         ]
-      : [
-          { value: ROLE_ADMIN_ESCOLA, label: "Admin Escola" },
-          { value: ROLE_SOMENTE_LEITURA, label: "Somente Leitura" },
-        ];
+      : [{ value: ROLE_ADMIN_ESCOLA, label: "Admin Escola" }];
 
     userRoleInput.innerHTML = "";
     roleOptions.forEach((roleOption) => {

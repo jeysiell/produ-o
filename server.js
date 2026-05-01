@@ -58,6 +58,7 @@ const ROLE_SUPERADMIN = "superadmin";
 const ROLE_ADMIN_ESCOLA = "admin_escola";
 const ROLE_SOMENTE_LEITURA = "somente_leitura";
 const ALL_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA, ROLE_SOMENTE_LEITURA];
+const ASSIGNABLE_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA];
 const WRITE_ROLES = [ROLE_SUPERADMIN, ROLE_ADMIN_ESCOLA];
 const PERIODS = ["morning", "afternoon", "afternoonFriday"];
 
@@ -2274,7 +2275,7 @@ app.post(
     const requestedPermissions = normalizePermissionsPayload(req.body?.permissions);
     const active = req.body?.active === false ? false : true;
 
-    if (!name || !email || !password || !ALL_ROLES.includes(role)) {
+    if (!name || !email || !password || !ASSIGNABLE_ROLES.includes(role)) {
       return res.status(400).json({ error: "invalid_user_payload" });
     }
     if (!isStrongPassword(password)) {
@@ -2414,7 +2415,7 @@ app.patch(
 
     if (Object.prototype.hasOwnProperty.call(req.body, "role")) {
       const role = String(req.body.role || "").trim();
-      if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: "invalid_role" });
+      if (!ASSIGNABLE_ROLES.includes(role)) return res.status(400).json({ error: "invalid_role" });
       if (!isSuperAdmin && role === ROLE_SUPERADMIN) {
         return res.status(403).json({ error: "cannot_assign_superadmin_role" });
       }

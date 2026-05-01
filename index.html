@@ -251,33 +251,6 @@
       ></div>
     </div>
 
-    <div
-      id="overlayWakeup"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md"
-    >
-      <div
-        class="w-[92%] max-w-md rounded-3xl border border-white/10 bg-white/95 p-8 text-center shadow-2xl dark:border-slate-700 dark:bg-slate-900/95"
-      >
-        <div
-          id="wakeIcon"
-          class="mx-auto h-14 w-14 rounded-full border-4 border-blue-500 border-t-transparent animate-spin"
-        ></div>
-
-        <h2 class="mt-6 font-display text-2xl font-bold">Inicializando Sistema</h2>
-        <p id="statusWake" class="mt-2 text-slate-500 dark:text-slate-400">
-          Conectando a API...
-        </p>
-
-        <button
-          id="btnWakeOk"
-          disabled
-          class="mt-6 w-full rounded-xl bg-slate-700 py-3 font-semibold text-white opacity-50 transition cursor-not-allowed"
-        >
-          OK
-        </button>
-      </div>
-    </div>
-
     <div class="flex min-h-screen">
       <aside
         id="sidebar"
@@ -374,33 +347,9 @@
                 <i class="fas fa-bell"></i>
               </div>
 
-              <div id="pageTitleBlock">
-                <p
-                  id="pageEyebrow"
-                  class="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400"
-                >
-                  Painel
-                </p>
-                <h1
-                  id="pageTitle"
-                  class="truncate font-display text-xl font-bold sm:text-2xl"
-                >
-                  Controle de Sinais
-                </h1>
-              </div>
             </div>
 
             <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-4">
-              <div
-                id="countdownBadge"
-                class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm dark:border-slate-700 dark:bg-slate-900"
-              >
-                Proximo em:
-                <span id="countdown" class="ml-1 font-bold text-sky-600 dark:text-sky-300">
-                  --:--
-                </span>
-              </div>
-
               <button
                 id="darkToggle"
                 class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-base text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -550,23 +499,6 @@
                   </p>
                 </div>
 
-                <div
-                  id="dashboardNextSignalCard"
-                  class="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Proximo Sinal
-                  </p>
-                  <h2
-                    id="nextSignalTime"
-                    class="mt-3 font-display text-4xl font-extrabold"
-                  >
-                    --:--
-                  </h2>
-                  <p id="nextSignalName" class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                    Carregando...
-                  </p>
-                </div>
               </div>
             </section>
 
@@ -1651,7 +1583,6 @@
               class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
             >
               <option value="admin_escola">Admin Escola</option>
-              <option value="somente_leitura">Somente Leitura</option>
               <option value="superadmin">Superadmin</option>
             </select>
           </div>
