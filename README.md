@@ -53,8 +53,12 @@ flowchart LR
 
 Arquivos principais:
 
-- `server.js`: API principal, auth, permissoes, regras de negocio.
-- `db/schema.sql`: schema base do banco.
+- `server.js`: bootstrap/wiring da aplicacao (middlewares, registro de modulos, scheduler).
+- `src/modules/*`: rotas por dominio (`auth`, `auth-users`, `schools`, `schedules`, `templates`, `audio`, `backups`, `audit`, `monitor`, `health`, `public-player`).
+- `src/modules/monitor/monitor.service.js`: regras de dominio de monitoramento/alertas/sweeps.
+- `src/config/env.js`: leitura e validacao de variaveis de ambiente.
+- `src/db/pool.js`: conexao com banco.
+- `src/db/schema.sql`: schema base do banco.
 - `index.html`: UI principal.
 - `config/js/config-section.js`: painel admin/configuracoes.
 - `config/js/index.js`: tela operacional/dashboard.
@@ -250,7 +254,7 @@ Eventos de auditoria de leitura:
 
 Ja configurado:
 
-- `api/[...route].js` encaminha requests para `server.js`.
+- `api/[...route].js` encaminha requests para `src/app`.
 - `vercel.json` define runtime Node para a funcao.
 
 Checklist de deploy:
@@ -277,11 +281,3 @@ Checklist de deploy:
   - em simulacao, backend bloqueia escrita por seguranca.
 - `permission_denied`:
   - revisar permissoes efetivas do usuario (perfil + override).
-
-## Documentacao completa em PDF
-
-Manual completo com instrucoes visuais:
-
-- [docs/Manual-SinalTech.pdf](./docs/Manual-SinalTech.pdf)
-- Fonte editavel do manual:
-  - [docs/Manual-SinalTech.html](./docs/Manual-SinalTech.html)

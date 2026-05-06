@@ -2,10 +2,10 @@
   "name": "sinaltech-multischool",
   "version": "1.0.0",
   "description": "SinalTech with multi-school support",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
     "test": "jest --runInBand"
   },
   "dependencies": {

@@ -1,12 +1,7 @@
 const postgres = require("postgres");
+const env = require("./src/config/env");
 
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error("Missing DATABASE_URL in environment variables.");
-}
-
-const sql = postgres(connectionString, {
+const sql = postgres(env.DATABASE_URL, {
   ssl: "require",
 });
 
