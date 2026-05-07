@@ -43,6 +43,7 @@ const env = {
   LOGIN_RATE_LIMIT_BLOCK_MS:
     Number(process.env.LOGIN_RATE_LIMIT_BLOCK_MS) || 20 * 60 * 1000,
   PASSWORD_MIN_LENGTH: Number(process.env.PASSWORD_MIN_LENGTH) || 10,
+  DB_SSL_MODE: String(process.env.DB_SSL_MODE || "no-verify").trim().toLowerCase(),
   DB_DNS_SERVERS: String(process.env.DB_DNS_SERVERS || "8.8.8.8,1.1.1.1")
     .split(",")
     .map((item) => item.trim())
@@ -60,6 +61,19 @@ function validateEnv() {
 
   if (env.NODE_ENV === "production" && env.JWT_SECRET === "dev-change-this-secret") {
     console.error("Missing JWT_SECRET for production.");
+    process.exit(1);
+  }
+
+  if (
+    env.NODE_ENV === "production" &&
+    env.DEFAULT_ADMIN_PASSWORD === "Admin@123456"
+  ) {
+    console.error("Missing DEFAULT_ADMIN_PASSWORD override for production.");
+    process.exit(1);
+  }
+
+  if (!["auto", "disable", "require", "no-verify"].includes(env.DB_SSL_MODE)) {
+    console.error("Invalid DB_SSL_MODE. Use auto, disable, require, or no-verify.");
     process.exit(1);
   }
 }

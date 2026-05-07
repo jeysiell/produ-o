@@ -14,6 +14,8 @@ function registerAuthRoutes(app, deps) {
     writeAuditLog,
     isSchoolBoundRole,
     signAccessToken,
+    issueAuthCookies,
+    clearAuthCookies,
     simulationTokenTtl,
     buildSimulationContext,
     sanitizeUser,
@@ -94,6 +96,7 @@ function registerAuthRoutes(app, deps) {
       }
 
       const token = signAccessToken({ sub: user.id, role: user.role, schoolId: user.school_id || null });
+      const csrfToken = issueAuthCookies(res, token);
       clearLoginRateLimit(rateLimitKey);
       const meta = getRequestMeta(req);
       await writeAuditLog({
@@ -107,7 +110,7 @@ function registerAuthRoutes(app, deps) {
         userAgent: meta.userAgent,
         meta: { requestId: meta.requestId },
       });
-      return res.json({ token, user: sanitizeUser(user) });
+      return res.json({ csrfToken, user: sanitizeUser(user) });
     } catch (error) {
       logStructured("error", "auth_login_failed", {
         requestId: req.requestId || null,
@@ -120,6 +123,11 @@ function registerAuthRoutes(app, deps) {
 
   app.get("/api/auth/me", authenticate, (req, res) => {
     res.json({ user: req.user });
+  });
+
+  app.post("/api/auth/logout", (_req, res) => {
+    clearAuthCookies(res);
+    res.json({ success: true });
   });
 
   app.post(
@@ -154,6 +162,7 @@ function registerAuthRoutes(app, deps) {
           { sub: req.user.id, simulation: true, simulatedUserId: targetRow.id },
           simulationTokenTtl
         );
+        const csrfToken = issueAuthCookies(res, simulationToken);
         const simulationContext = buildSimulationContext(req.user, {
           type: "user",
           targetUserId: targetRow.id,
@@ -180,13 +189,27 @@ function registerAuthRoutes(app, deps) {
           meta: { requestId: meta.requestId },
         });
 
-        return res.json({ token: simulationToken, user: simulatedUser });
+        return res.json({ csrfToken, user: simulatedUser });
       } catch (error) {
         console.error("POST /api/auth/simulate/user/:id error:", error);
         return sendInternalError(res, "failed_to_start_user_simulation", error);
       }
     }
   );
+
+  app.post("/api/auth/simulation/exit", authenticate, async (req, res) => {
+    if (!req.simulation?.active || !req.actorUser?.id) {
+      return res.status(400).json({ error: "simulation_not_active" });
+    }
+
+    const token = signAccessToken({
+      sub: req.actorUser.id,
+      role: req.actorUser.role,
+      schoolId: req.actorUser.schoolId || null,
+    });
+    const csrfToken = issueAuthCookies(res, token);
+    return res.json({ csrfToken, user: req.actorUser });
+  });
 
   app.post("/api/auth/change-password", authenticate, async (req, res) => {
     const currentPassword = String(req.body?.currentPassword || "");

@@ -14,6 +14,8 @@
     audioEnabled: false,
     currentAudio: null,
     playedKeys: new Set(),
+    emphasizedSignalKey: "",
+    timelineUserScrolledAt: 0,
   };
 
   const schoolName = document.getElementById("schoolName");
@@ -31,6 +33,9 @@
   const manualSignalSelect = document.getElementById("manualSignalSelect");
   const manualPlayBtn = document.getElementById("manualPlayBtn");
   const scheduleSections = document.getElementById("scheduleSections");
+  const themeToggleBtn = document.getElementById("themeToggleBtn");
+
+  const TIMELINE_IDLE_SCROLL_MS = 8000;
 
   function getTokenFromPath() {
     const parts = window.location.pathname.split("/").filter(Boolean);
@@ -98,7 +103,11 @@
   }
 
   function formatSignalLabel(signal) {
-    return `${signal.time || "--:--"} - ${signal.name || "Sinal"}`;
+    return `${signal.name || "Sinal"}`;
+  }
+
+  function getSignalKey(signal) {
+    return `${signal?.time || ""}-${signal?.name || ""}-${signal?.music || ""}`;
   }
 
   function formatAudioTrackLabel(track) {
@@ -117,44 +126,141 @@
 
   function setStatus(message, isError = false) {
     playerStatus.textContent = message;
-    playerStatus.className = `mt-1 text-sm ${
-      isError ? "text-rose-600 dark:text-rose-300" : "text-slate-500 dark:text-slate-400"
-    }`;
+    playerStatus.className = `mt-3 text-base ${isError ? "text-rose-300" : "text-slate-300"}`;
   }
 
-  function renderSchedule() {
-    scheduleSections.innerHTML = "";
+  function getSignalMinutes(signal) {
+    const [hour, minute] = String(signal?.time || "").split(":").map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    return hour * 60 + minute;
+  }
 
-    PERIODS.forEach((period) => {
-      const section = document.createElement("article");
-      section.className =
-        "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900";
+  function getCurrentMinutes() {
+    const schoolTime = getSchoolTimeParts();
+    return Number(schoolTime.hour) * 60 + Number(schoolTime.minute);
+  }
 
-      const items = state.schedule[period] || [];
-      const rows = items.length
-        ? items
-            .map(
-              (signal) => `
-                <li class="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950">
-                  <div class="min-w-0">
-                    <p class="truncate text-sm font-bold text-slate-900 dark:text-slate-100">${escapeHtml(signal.name || "Sinal")}</p>
-                    <p class="text-xs font-semibold text-slate-500 dark:text-slate-500">${signal.duration || 20}s</p>
-                  </div>
-                  <span class="shrink-0 rounded-lg bg-cyan-100 px-2.5 py-1 text-sm font-black tabular-nums text-cyan-800 dark:bg-cyan-400/10 dark:text-cyan-200">
-                    ${escapeHtml(signal.time || "--:--")}
-                  </span>
-                </li>
-              `
-            )
-            .join("")
-        : `<li class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-500">Sem sinais cadastrados.</li>`;
+  function getSignalStatus(signal, upcoming, nowMinutes) {
+    if (upcoming && signal === upcoming) return "next";
+    const signalMinutes = getSignalMinutes(signal);
+    if (signalMinutes !== null && signalMinutes < nowMinutes) return "done";
+    return "waiting";
+  }
 
-      section.innerHTML = `
-        <h3 class="text-base font-black">${PERIOD_LABELS[period]}</h3>
-        <ul class="mt-3 space-y-2">${rows}</ul>
-      `;
-      scheduleSections.appendChild(section);
+  function getLastPlayedSignal(todaySignals, nowMinutes) {
+    return [...todaySignals]
+      .filter((signal) => {
+        const minutes = getSignalMinutes(signal);
+        return minutes !== null && minutes < nowMinutes;
+      })
+      .pop() || null;
+  }
+
+  function formatMinutesUntil(signal, nowMinutes) {
+    const signalMinutes = getSignalMinutes(signal);
+    if (signalMinutes === null) return "";
+    const diff = Math.max(0, signalMinutes - nowMinutes);
+    if (diff === 0) return "agora";
+    if (diff === 1) return "falta 1 min";
+    return `faltam ${diff} min`;
+  }
+
+  function getTimelineFocus(todaySignals, nowMinutes) {
+    const upcoming = todaySignals.find((signal) => {
+      const minutes = getSignalMinutes(signal);
+      return minutes !== null && minutes >= nowMinutes;
     });
+    const lastPlayed = getLastPlayedSignal(todaySignals, nowMinutes);
+    return upcoming || lastPlayed || todaySignals[0] || null;
+  }
+
+  function syncEmphasizedSignal(todaySignals, nowMinutes) {
+    const focus = getTimelineFocus(todaySignals, nowMinutes);
+    state.emphasizedSignalKey = focus ? getSignalKey(focus) : "";
+    return focus;
+  }
+
+  function scrollTimelineToEmphasis({ behavior = "smooth" } = {}) {
+    if (!scheduleSections || !state.emphasizedSignalKey) return;
+    const target = Array.from(scheduleSections.children).find(
+      (element) => element.dataset.signalKey === state.emphasizedSignalKey
+    );
+    if (!target) return;
+
+    const top = target.offsetTop - scheduleSections.clientHeight / 2 + target.offsetHeight / 2;
+    scheduleSections.scrollTo({ top: Math.max(0, top), behavior });
+  }
+
+  function renderSchedule(options = {}) {
+    scheduleSections.innerHTML = "";
+    const todaySignals = getSignalsForToday();
+    const nowMinutes = getCurrentMinutes();
+    const upcoming = todaySignals.find((signal) => {
+      const minutes = getSignalMinutes(signal);
+      return minutes !== null && minutes >= nowMinutes;
+    });
+    syncEmphasizedSignal(todaySignals, nowMinutes);
+
+    if (!todaySignals.length) {
+      scheduleSections.innerHTML = `
+        <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-sm font-bold text-slate-500 transition-colors dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+          Nenhum sinal cadastrado para hoje.
+        </div>
+      `;
+      return;
+    }
+
+    todaySignals.forEach((signal) => {
+      const status = getSignalStatus(signal, upcoming, nowMinutes);
+      const row = document.createElement("article");
+      const statusStyles = {
+        done: {
+          dot: "bg-cyan-500",
+          panel: "bg-white dark:bg-slate-800",
+          label: "Concluido",
+          labelClass: "text-cyan-700 dark:text-cyan-300",
+          meta: "ja tocou",
+        },
+        next: {
+          dot: "bg-sky-600 ring-8 ring-sky-100 dark:ring-sky-900",
+          panel:
+            "bg-sky-50 ring-2 ring-sky-500 shadow-lg shadow-sky-200/70 dark:bg-sky-950/50 dark:ring-sky-400 dark:shadow-sky-950/30",
+          label: "Proximo",
+          labelClass: "text-sky-700 dark:text-sky-300",
+          meta: formatMinutesUntil(signal, nowMinutes),
+        },
+        waiting: {
+          dot: "bg-slate-300 dark:bg-slate-600",
+          panel: "bg-white dark:bg-slate-800",
+          label: "Aguardando",
+          labelClass: "text-slate-500 dark:text-slate-400",
+          meta: "aguardando",
+        },
+      }[status];
+
+      row.dataset.signalKey = getSignalKey(signal);
+      row.className = `grid min-h-[92px] grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-2xl ${statusStyles.panel} p-3 shadow-sm transition-colors`;
+      row.innerHTML = `
+        <div class="flex flex-col items-center">
+          <span class="mt-1 h-4 w-4 rounded-full ${statusStyles.dot}"></span>
+          <span class="mt-2 h-full w-0.5 rounded-full bg-slate-200 dark:bg-slate-700"></span>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <p class="truncate text-lg font-black text-slate-950 dark:text-slate-100">${escapeHtml(signal.name || "Sinal")}</p>
+              <p class="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">${escapeHtml(signal.time || "--:--")} - ${escapeHtml(statusStyles.meta)}</p>
+            </div>
+            <span class="shrink-0 text-sm font-black ${statusStyles.labelClass}">${statusStyles.label}</span>
+          </div>
+        </div>
+      `;
+      scheduleSections.appendChild(row);
+    });
+
+    if (options.scrollToEmphasis) {
+      scrollTimelineToEmphasis({ behavior: options.behavior || "auto" });
+    }
   }
 
   function renderManualOptions() {
@@ -191,20 +297,27 @@
   }
 
   function updateNextSignal() {
-    const schoolTime = getSchoolTimeParts();
-    const nowMinutes = Number(schoolTime.hour) * 60 + Number(schoolTime.minute);
+    const nowMinutes = getCurrentMinutes();
     const todaySignals = getSignalsForToday();
     const upcoming = todaySignals.find((signal) => {
-      const [hour, minute] = String(signal.time || "").split(":").map(Number);
-      return Number.isFinite(hour) && Number.isFinite(minute) && hour * 60 + minute >= nowMinutes;
+      const minutes = getSignalMinutes(signal);
+      return minutes !== null && minutes >= nowMinutes;
     });
+    const lastPlayed = getLastPlayedSignal(todaySignals, nowMinutes);
+    syncEmphasizedSignal(todaySignals, nowMinutes);
     nextSignal.textContent = upcoming ? formatSignalLabel(upcoming) : "Nenhum sinal restante hoje";
     if (signalCount) {
-      signalCount.textContent = `${todaySignals.length} hoje`;
+      signalCount.textContent = `${todaySignals.length} sinal${todaySignals.length === 1 ? "" : "is"} hoje`;
+    }
+    if (audioCount) audioCount.textContent = `${todaySignals.length} cadastrado${todaySignals.length === 1 ? "" : "s"}`;
+    if (playingSignal) {
+      playingSignal.textContent = lastPlayed
+        ? `${lastPlayed.name || "Sinal"} • ${lastPlayed.time || "--:--"}`
+        : "Nenhum ainda";
     }
     if (scheduledStatus) {
       scheduledStatus.textContent = upcoming
-        ? "A pagina toca automaticamente quando o som esta ativo."
+        ? `${upcoming.time || "--:--"} • ${formatMinutesUntil(upcoming, nowMinutes)}`
         : "Todos os sinais de hoje ja passaram.";
     }
   }
@@ -224,7 +337,6 @@
     const audio = new Audio(signal.music);
     audio.preload = "auto";
     state.currentAudio = audio;
-    playingSignal.textContent = signal.name || "Sinal";
     audioHint.textContent = "Reproduzindo audio cadastrado.";
 
     try {
@@ -243,30 +355,29 @@
       state.currentAudio.pause();
       state.currentAudio.currentTime = 0;
       state.currentAudio = null;
-      playingSignal.textContent = "Nenhum";
     }
 
     if (state.audioEnabled) {
       audioHint.textContent = "Som ativo. A pagina pode tocar os proximos sinais enquanto estiver aberta.";
       enableAudioBtn.innerHTML = `<i class="fas fa-volume-high"></i> Som ativo`;
-      enableAudioBtn.classList.remove("bg-slate-950", "hover:bg-slate-800");
-      enableAudioBtn.classList.add("bg-emerald-600", "hover:bg-emerald-700");
+      enableAudioBtn.className =
+        "mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-5 py-2 text-base font-black text-white transition hover:bg-cyan-700";
       if (audioBadge) {
         audioBadge.textContent = "Ativo";
         audioBadge.className =
-          "rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300";
+          "shrink-0 rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300";
       }
       return;
     }
 
     audioHint.textContent = "Som desativado. Os proximos sinais nao serao tocados automaticamente.";
-    enableAudioBtn.innerHTML = `<i class="fas fa-volume-xmark"></i> Som desativado`;
-    enableAudioBtn.classList.remove("bg-emerald-600", "hover:bg-emerald-700");
-    enableAudioBtn.classList.add("bg-slate-950", "hover:bg-slate-800");
+    enableAudioBtn.innerHTML = `<i class="fas fa-volume-high"></i> Ativar som`;
+    enableAudioBtn.className =
+      "mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-600 px-5 py-2 text-base font-black text-white transition hover:bg-sky-700";
     if (audioBadge) {
       audioBadge.textContent = "Desativado";
       audioBadge.className =
-        "rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+        "shrink-0 rounded-full bg-slate-200 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-300";
     }
   }
 
@@ -305,7 +416,11 @@
         }).format(new Date());
       }
     }
+    const previousEmphasisKey = state.emphasizedSignalKey;
     updateNextSignal();
+    if (previousEmphasisKey !== state.emphasizedSignalKey) {
+      renderSchedule({ scrollToEmphasis: true, behavior: "smooth" });
+    }
     checkScheduledSignal();
   }
 
@@ -330,7 +445,7 @@
 
       schoolName.textContent = state.school?.name || "Player publico";
       setStatus("Link publico de sinais. Sem acesso ao painel administrativo.");
-      renderSchedule();
+      renderSchedule({ scrollToEmphasis: true, behavior: "auto" });
       renderManualOptions();
       tick();
     } catch (error) {
@@ -356,7 +471,62 @@
     manualPlayBtn.disabled = manualSignalSelect.value === "";
   });
 
-  document.documentElement.classList.remove("dark");
+  scheduleSections?.addEventListener("scroll", () => {
+    state.timelineUserScrolledAt = Date.now();
+  });
+
+  function readStoredTheme() {
+    try {
+      return window.localStorage.getItem("darkMode");
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function storeTheme(isDark) {
+    try {
+      window.localStorage.setItem("darkMode", String(isDark));
+    } catch (_error) {
+      // Theme still changes for the current page even when storage is unavailable.
+    }
+  }
+
+  function updateThemeButton() {
+    if (!themeToggleBtn) return;
+    const isDark = document.documentElement.classList.contains("dark");
+    themeToggleBtn.querySelector('[data-theme-icon="moon"]')?.classList.toggle("hidden", isDark);
+    themeToggleBtn.querySelector('[data-theme-icon="sun"]')?.classList.toggle("hidden", !isDark);
+    const label = isDark ? "Ativar tema claro" : "Ativar tema escuro";
+    themeToggleBtn.setAttribute("aria-label", label);
+    themeToggleBtn.setAttribute("title", label);
+  }
+
+  function setTheme(isDark) {
+    document.documentElement.classList.toggle("dark", isDark);
+    storeTheme(isDark);
+    updateThemeButton();
+  }
+
+  function loadTheme() {
+    const savedTheme = readStoredTheme();
+    if (savedTheme !== null) {
+      setTheme(savedTheme === "true");
+      return;
+    }
+    setTheme(window.matchMedia?.("(prefers-color-scheme: dark)")?.matches || false);
+  }
+
+  themeToggleBtn?.addEventListener("click", () => {
+    document.documentElement.classList.toggle("dark");
+    storeTheme(document.documentElement.classList.contains("dark"));
+    updateThemeButton();
+  });
+
+  loadTheme();
   loadPlayer();
   setInterval(tick, 1000);
+  setInterval(() => {
+    if (Date.now() - state.timelineUserScrolledAt < TIMELINE_IDLE_SCROLL_MS) return;
+    scrollTimelineToEmphasis({ behavior: "smooth" });
+  }, 5000);
 })();

@@ -897,6 +897,29 @@
             <section
               class="rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900"
             >
+              <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 text-sm dark:border-slate-800 md:flex-row md:items-center md:justify-between">
+                <p id="auditPaginationMeta" class="text-slate-500 dark:text-slate-400">
+                  Pagina 1
+                </p>
+                <div class="inline-flex items-center gap-2">
+                  <button
+                    id="auditPrevPageBtn"
+                    type="button"
+                    class="rounded-lg border border-slate-300 px-3 py-1.5 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                    disabled
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    id="auditNextPageBtn"
+                    type="button"
+                    class="rounded-lg border border-slate-300 px-3 py-1.5 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                    disabled
+                  >
+                    Proxima
+                  </button>
+                </div>
+              </div>
               <div class="-mx-1 overflow-x-auto px-1">
                 <table class="w-full min-w-[760px] text-sm">
                   <thead class="bg-slate-100 text-left dark:bg-slate-800">

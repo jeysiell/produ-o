@@ -78,6 +78,7 @@ Variaveis suportadas:
 - `DATABASE_URL`: string completa de conexao Postgres.
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`: alternativa ao `DATABASE_URL`.
 - `DB_DNS_SERVERS`: fallback DNS (ex.: `8.8.8.8,1.1.1.1`).
+- `DB_SSL_MODE`: modo TLS do banco (`auto`, `disable`, `require`, `no-verify`; padrao `no-verify`).
 - `JWT_SECRET`: segredo JWT (obrigatorio em producao).
 - `JWT_EXPIRES_IN`: exp de token principal (padrao `12h`).
 - `SIMULATION_TOKEN_TTL`: exp de token de simulacao (padrao `30m`).
@@ -201,7 +202,9 @@ flowchart TD
 
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `POST /api/auth/logout`
 - `POST /api/auth/simulate/user/:id`
+- `POST /api/auth/simulation/exit`
 - `POST /api/auth/change-password`
 - `GET /api/auth/users`
 - `POST /api/auth/users`
@@ -249,6 +252,12 @@ Eventos de auditoria de leitura:
 - Visualizacao de lista de backups por escola.
 - Visualizacao de snapshot individual de backup.
 - Consulta de metricas HTTP de observabilidade.
+
+### Sessao e CSRF
+
+- O login cria cookie `HttpOnly` de sessao e cookie legivel `sinaltech_csrf`.
+- Escritas autenticadas por cookie devem enviar o header `X-CSRF-Token` com o valor de `sinaltech_csrf`.
+- `Authorization: Bearer` continua aceito como fallback para clientes legados e testes.
 
 ## Deploy na Vercel
 

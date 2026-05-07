@@ -6,6 +6,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const request = require("supertest");
 const { app, pool, __testUtils } = require("../server");
+const { getAuthToken } = require("../src/middlewares/simulation");
 
 function buildToken(userId, extras = {}) {
   return jwt.sign(
@@ -73,7 +74,7 @@ describe("API security and permission flows", () => {
     });
   });
 
-  test("POST /api/auth/login returns token for valid credentials", async () => {
+  test("POST /api/auth/login returns cookie session for valid credentials", async () => {
     const password = "SenhaForte@123";
     const hash = await bcrypt.hash(password, 12);
 
@@ -106,7 +107,10 @@ describe("API security and permission flows", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.token).toBeTruthy();
+    expect(response.body.token).toBeUndefined();
+    expect(response.body.csrfToken).toBeTruthy();
+    expect(response.headers["set-cookie"].join(";")).toContain("sinaltech_auth=");
+    expect(response.headers["set-cookie"].join(";")).toContain("sinaltech_csrf=");
     expect(response.body.user.email).toBe("admin@teste.com");
   });
 
@@ -135,6 +139,86 @@ describe("API security and permission flows", () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toBe("permission_denied");
+  });
+
+  test("getAuthToken reads bearer first and cookie as fallback", () => {
+    const cookieOnly = getAuthToken({
+      headers: { cookie: "sinaltech_auth=cookie-token; sinaltech_csrf=csrf-value" },
+      get: () => "",
+    });
+    expect(cookieOnly).toEqual({ token: "cookie-token", source: "cookie" });
+
+    const bearerFirst = getAuthToken({
+      headers: { cookie: "sinaltech_auth=cookie-token" },
+      get: (name) => (name === "authorization" ? "Bearer bearer-token" : ""),
+    });
+    expect(bearerFirst).toEqual({ token: "bearer-token", source: "bearer" });
+  });
+
+  test("GET /api/auth/me accepts cookie emitted by login", async () => {
+    const password = "SenhaForte@123";
+    const hash = await bcrypt.hash(password, 12);
+
+    installPoolMock(async (sql) => {
+      const text = String(sql);
+      if (text.includes("WHERE u.email = $1 AND u.active = TRUE")) {
+        return {
+          rowCount: 1,
+          rows: [
+            buildUserRow({
+              id: 22,
+              email: "cookie@teste.com",
+              role: "superadmin",
+              school_id: null,
+              school_name: null,
+              password_hash: hash,
+            }),
+          ],
+        };
+      }
+      if (text.includes("WHERE u.id = $1 AND u.active = TRUE")) {
+        return {
+          rowCount: 1,
+          rows: [
+            buildUserRow({
+              id: 22,
+              email: "cookie@teste.com",
+              role: "superadmin",
+              school_id: null,
+              school_name: null,
+            }),
+          ],
+        };
+      }
+      if (text.includes("INSERT INTO audit_logs")) {
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error(`Unexpected query in cookie login test: ${text.slice(0, 90)}`);
+    });
+
+    const loginResponse = await request(app).post("/api/auth/login").send({
+      email: "cookie@teste.com",
+      password,
+    });
+    const cookieHeader = loginResponse.headers["set-cookie"]
+      .map((cookie) => cookie.split(";")[0])
+      .join("; ");
+
+    const response = await request(app).get("/api/auth/me").set("Cookie", cookieHeader);
+
+    expect(loginResponse.status).toBe(200);
+    expect(response.status).toBe(200);
+    expect(response.body.user.email).toBe("cookie@teste.com");
+  });
+
+  test("cookie-authenticated writes require csrf header", async () => {
+    const token = buildToken(21, { role: "superadmin", schoolId: null });
+    const response = await request(app)
+      .post("/api/auth/logout")
+      .set("Cookie", `sinaltech_auth=${token}; sinaltech_csrf=csrf-value`);
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("csrf_token_required");
   });
 
   test("POST /api/change-requests/:id/approve blocks admin without approval feature", async () => {

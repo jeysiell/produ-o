@@ -54,11 +54,18 @@ function createLookupWithFallback() {
   };
 }
 
-const shouldUseSsl = !/localhost|127\.0\.0\.1/.test(env.DATABASE_URL);
+function buildSslConfig() {
+  if (env.DB_SSL_MODE === "disable") return false;
+  if (env.DB_SSL_MODE === "require") return { rejectUnauthorized: true };
+  if (env.DB_SSL_MODE === "no-verify") return { rejectUnauthorized: false };
+
+  const shouldUseSsl = !/localhost|127\.0\.0\.1/.test(env.DATABASE_URL);
+  return shouldUseSsl ? { rejectUnauthorized: true } : false;
+}
 
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
-  ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
+  ssl: buildSslConfig(),
   lookup: createLookupWithFallback(),
 });
 

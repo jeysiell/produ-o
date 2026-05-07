@@ -17,6 +17,8 @@ function registerAuditRoutes(app, deps) {
     async (req, res) => {
       const limitRaw = Number.parseInt(String(req.query.limit || "100"), 10);
       const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : 100;
+      const offsetRaw = Number.parseInt(String(req.query.offset || "0"), 10);
+      const offset = Number.isInteger(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
       const schoolIdFilter = req.query.schoolId ? toIntId(req.query.schoolId) : null;
       const userIdFilter = req.query.userId ? toIntId(req.query.userId) : null;
       const fromFilter = req.query.from ? parseDateFilter(req.query.from) : null;
@@ -30,7 +32,9 @@ function registerAuditRoutes(app, deps) {
         const where = [];
 
         if (req.user.role !== roleSuperadmin) {
-          if (!req.user.schoolId) return res.json([]);
+          if (!req.user.schoolId) {
+            return res.json({ items: [], total: 0, limit, offset, hasMore: false });
+          }
           values.push(req.user.schoolId);
           where.push(`al.school_id = $${values.length}`);
         } else if (schoolIdFilter) {
@@ -55,8 +59,17 @@ function registerAuditRoutes(app, deps) {
           where.push(`al.created_at <= $${values.length}`);
         }
 
-        values.push(limit);
         const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+        const countResult = await pool.query(
+          `
+          SELECT COUNT(*)::int AS total
+          FROM audit_logs al
+          ${whereSql}
+          `,
+          values
+        );
+
+        const pageValues = [...values, limit, offset];
         const result = await pool.query(
           `
           SELECT al.id, al.user_id, al.school_id, al.action, al.resource, al.resource_id,
@@ -67,13 +80,14 @@ function registerAuditRoutes(app, deps) {
           LEFT JOIN schools s ON s.id = al.school_id
           ${whereSql}
           ORDER BY al.created_at DESC
-          LIMIT $${values.length}
+          LIMIT $${pageValues.length - 1}
+          OFFSET $${pageValues.length}
           `,
-          values
+          pageValues
         );
 
-        res.json(
-          result.rows.map((row) => ({
+        const total = Number(countResult.rows[0]?.total) || 0;
+        const items = result.rows.map((row) => ({
             id: row.id,
             userId: row.user_id,
             userName: row.user_name || null,
@@ -88,8 +102,15 @@ function registerAuditRoutes(app, deps) {
             ip: row.ip,
             userAgent: row.user_agent,
             createdAt: row.created_at,
-          }))
-        );
+          }));
+
+        res.json({
+          items,
+          total,
+          limit,
+          offset,
+          hasMore: offset + items.length < total,
+        });
       } catch (error) {
         console.error("GET /api/audit-logs error:", error);
         sendInternalError(res, "failed_to_list_audit_logs", error);

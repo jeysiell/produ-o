@@ -1,4 +1,4 @@
-const { getBearerToken } = require("./simulation");
+const { getAuthToken, getBearerToken } = require("./simulation");
 
 function createAuthMiddleware({
   jwt,
@@ -12,8 +12,9 @@ function createAuthMiddleware({
   sendInternalError,
 }) {
   return async function authenticate(req, res, next) {
-    const token = getBearerToken(req);
+    const { token, source } = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "auth_required" });
+    req.authTokenSource = source;
 
     let decoded;
     try {

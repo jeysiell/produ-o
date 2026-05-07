@@ -9,7 +9,12 @@ const pool = require("./src/db/pool");
 const { createAuthMiddleware } = require("./src/middlewares/auth");
 const { createHttpMetricsMiddleware } = require("./src/middlewares/http-metrics");
 const { createPermissionMiddlewares } = require("./src/middlewares/permissions");
-const { createSimulationWriteGuard } = require("./src/middlewares/simulation");
+const {
+  AUTH_COOKIE_NAME,
+  CSRF_COOKIE_NAME,
+  createCookieCsrfGuard,
+  createSimulationWriteGuard,
+} = require("./src/middlewares/simulation");
 const { registerHealthRoutes } = require("./src/modules/health/health.routes");
 const { registerPublicPlayerRoutes } = require("./src/modules/public-player/public-player.routes");
 const { registerSchoolsRoutes } = require("./src/modules/schools/schools.routes");
@@ -34,6 +39,9 @@ const {
   ROLE_PERMISSION_DEFAULTS,
 } = require("./src/shared/constants");
 const { createPermissionHelpers } = require("./src/shared/permissions");
+const { createAuthCookieService } = require("./src/shared/auth-session");
+const { createHttpMetricsStore } = require("./src/shared/http-metrics");
+const { createLoginRateLimiter } = require("./src/shared/login-rate-limit");
 const { toIsoNow, slugify, toIntId, normalizeTime, parseDateFilter } = require("./src/shared/utils");
 
 const app = express();
@@ -54,6 +62,7 @@ const SUPABASE_STORAGE_BUCKET = env.SUPABASE_STORAGE_BUCKET;
 const AUDIO_CLIP_DURATION_SECONDS = 20;
 const AUDIO_UPLOAD_MAX_BYTES = env.AUDIO_UPLOAD_MAX_BYTES;
 const AUDIO_STORAGE_SOFT_LIMIT_BYTES = env.AUDIO_STORAGE_SOFT_LIMIT_BYTES;
+const COOKIE_SECURE = env.NODE_ENV === "production";
 
 const runtimeStats = {
   lastMonitoringSweepAt: null,
@@ -63,18 +72,6 @@ const runtimeStats = {
   lastAuditRetentionSweepAt: null,
   lastAuditRetentionSweepResult: null,
 };
-const httpMetrics = {
-  totalRequests: 0,
-  totalErrors: 0,
-  byEndpoint: new Map(),
-  recentEvents: [],
-};
-const HTTP_METRICS_MAX_EVENTS = env.HTTP_METRICS_MAX_EVENTS;
-const HTTP_METRICS_MAX_AGE_MS = env.HTTP_METRICS_MAX_AGE_MS;
-const loginRateLimitState = new Map();
-const LOGIN_RATE_LIMIT_WINDOW_MS = env.LOGIN_RATE_LIMIT_WINDOW_MS;
-const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS;
-const LOGIN_RATE_LIMIT_BLOCK_MS = env.LOGIN_RATE_LIMIT_BLOCK_MS;
 const PASSWORD_MIN_LENGTH = env.PASSWORD_MIN_LENGTH;
 const PASSWORD_POLICY_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/;
 
@@ -113,130 +110,29 @@ function logStructured(level, event, details = {}) {
   console.log(serialized);
 }
 
-function normalizeEndpointKey(req) {
-  const method = String(req.method || "").toUpperCase() || "UNKNOWN";
-  const pathValue = String(req.path || req.originalUrl || "/");
-  return `${method} ${pathValue}`;
-}
-
-function pruneHttpMetricEvents(nowMs = Date.now()) {
-  const cutoff = nowMs - HTTP_METRICS_MAX_AGE_MS;
-  if (!httpMetrics.recentEvents.length) return;
-  httpMetrics.recentEvents = httpMetrics.recentEvents.filter((event) => event.timestampMs >= cutoff);
-  if (httpMetrics.recentEvents.length > HTTP_METRICS_MAX_EVENTS) {
-    httpMetrics.recentEvents = httpMetrics.recentEvents.slice(-HTTP_METRICS_MAX_EVENTS);
-  }
-}
-
-function recordHttpMetric(metric) {
-  const endpointKey = String(metric?.endpoint || "UNKNOWN");
-  const method = String(metric?.method || "UNKNOWN").toUpperCase();
-  const durationMs = Number(metric?.durationMs) || 0;
-  const statusCode = Number(metric?.statusCode) || 0;
-  const timestampMs = Number(metric?.timestampMs) || Date.now();
-
-  const key = String(endpointKey || "UNKNOWN");
-  const previous = httpMetrics.byEndpoint.get(key) || {
-    method,
-    count: 0,
-    errors: 0,
-    totalLatencyMs: 0,
-    maxLatencyMs: 0,
-    lastStatusCode: 0,
-    lastSeenAt: null,
-  };
-
-  previous.count += 1;
-  previous.totalLatencyMs += durationMs;
-  previous.maxLatencyMs = Math.max(previous.maxLatencyMs, durationMs);
-  previous.lastStatusCode = Number(statusCode) || 0;
-  previous.lastSeenAt = toIsoNow();
-  if (Number(statusCode) >= 500) previous.errors += 1;
-
-  httpMetrics.byEndpoint.set(key, previous);
-  httpMetrics.totalRequests += 1;
-  if (Number(statusCode) >= 500) httpMetrics.totalErrors += 1;
-
-  httpMetrics.recentEvents.push({
-    endpoint: key,
-    method,
-    statusCode,
-    durationMs,
-    timestampMs,
-  });
-  pruneHttpMetricEvents(timestampMs);
-}
-
-function getHttpMetricsSnapshot(options = {}) {
-  const topNRaw = Number.parseInt(String(options.topN || "10"), 10);
-  const topN = Number.isInteger(topNRaw) ? Math.min(Math.max(topNRaw, 1), 100) : 10;
-  const methodInput = String(options.method || "ALL").trim().toUpperCase();
-  const allowedMethods = new Set(["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"]);
-  const method = allowedMethods.has(methodInput) ? methodInput : "ALL";
-  const windowRaw = Number.parseInt(String(options.windowMinutes || "60"), 10);
-  const windowMinutes = Number.isInteger(windowRaw) ? Math.min(Math.max(windowRaw, 5), 1440) : 60;
-
-  const nowMs = Date.now();
-  pruneHttpMetricEvents(nowMs);
-  const cutoff = nowMs - windowMinutes * 60 * 1000;
-
-  const filtered = httpMetrics.recentEvents.filter((event) => {
-    if (event.timestampMs < cutoff) return false;
-    if (method !== "ALL" && event.method !== method) return false;
-    return true;
+const { normalizeEndpointKey, recordHttpMetric, getHttpMetricsSnapshot } =
+  createHttpMetricsStore({
+    maxEvents: env.HTTP_METRICS_MAX_EVENTS,
+    maxAgeMs: env.HTTP_METRICS_MAX_AGE_MS,
+    toIsoNow,
   });
 
-  const byEndpoint = new Map();
-  filtered.forEach((event) => {
-    const previous = byEndpoint.get(event.endpoint) || {
-      endpoint: event.endpoint,
-      method: event.method,
-      requests: 0,
-      errors: 0,
-      totalLatencyMs: 0,
-      latencyMaxMs: 0,
-      lastStatusCode: 0,
-      lastSeenAt: null,
-    };
-    previous.requests += 1;
-    previous.totalLatencyMs += Number(event.durationMs) || 0;
-    previous.latencyMaxMs = Math.max(previous.latencyMaxMs, Number(event.durationMs) || 0);
-    previous.lastStatusCode = Number(event.statusCode) || 0;
-    previous.lastSeenAt = new Date(event.timestampMs).toISOString();
-    if (Number(event.statusCode) >= 500) previous.errors += 1;
-    byEndpoint.set(event.endpoint, previous);
-  });
+const {
+  getLoginRateLimitKey,
+  isLoginBlocked,
+  registerFailedLoginAttempt,
+  clearLoginRateLimit,
+} = createLoginRateLimiter({
+  windowMs: env.LOGIN_RATE_LIMIT_WINDOW_MS,
+  maxAttempts: env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+  blockMs: env.LOGIN_RATE_LIMIT_BLOCK_MS,
+});
 
-  const rows = Array.from(byEndpoint.values()).map((item) => ({
-    endpoint: item.endpoint,
-    method: item.method,
-    requests: item.requests,
-    errors: item.errors,
-    errorRate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
-    latencyAvgMs: item.requests > 0 ? Number((item.totalLatencyMs / item.requests).toFixed(2)) : 0,
-    latencyMaxMs: Number(item.latencyMaxMs.toFixed(2)),
-    lastStatusCode: item.lastStatusCode,
-    lastSeenAt: item.lastSeenAt,
-  }));
-
-  rows.sort((a, b) => b.requests - a.requests);
-  const totalRequests = filtered.length;
-  const totalErrors = filtered.reduce(
-    (sum, event) => sum + (Number(event.statusCode) >= 500 ? 1 : 0),
-    0
-  );
-
-  return {
-    scope: {
-      method,
-      windowMinutes,
-      topN,
-    },
-    totalRequests,
-    totalErrors,
-    endpoints: rows.slice(0, topN),
-  };
-}
+const { issueAuthCookies, clearAuthCookies } = createAuthCookieService({
+  authCookieName: AUTH_COOKIE_NAME,
+  csrfCookieName: CSRF_COOKIE_NAME,
+  secure: COOKIE_SECURE,
+});
 
 function isStrongPassword(password) {
   const value = String(password || "");
@@ -246,56 +142,6 @@ function isStrongPassword(password) {
 
 function getPasswordPolicyDescription() {
   return `minimum_length_${PASSWORD_MIN_LENGTH}_with_uppercase_lowercase_number_and_symbol`;
-}
-
-function getLoginRateLimitKey(req, email) {
-  const baseIp =
-    String(req.headers["x-forwarded-for"] || "")
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean)[0] || req.socket?.remoteAddress || "unknown";
-  const normalizedEmail = String(email || "").trim().toLowerCase() || "unknown";
-  return `${baseIp}|${normalizedEmail}`;
-}
-
-function getLoginRateLimitRecord(key) {
-  const now = Date.now();
-  const existing = loginRateLimitState.get(key);
-  if (!existing || now - existing.windowStartedAt > LOGIN_RATE_LIMIT_WINDOW_MS) {
-    const next = {
-      windowStartedAt: now,
-      attempts: 0,
-      blockedUntil: 0,
-    };
-    loginRateLimitState.set(key, next);
-    return next;
-  }
-  return existing;
-}
-
-function isLoginBlocked(key) {
-  const record = getLoginRateLimitRecord(key);
-  const now = Date.now();
-  if (record.blockedUntil > now) {
-    return {
-      blocked: true,
-      retryAfterSeconds: Math.max(1, Math.ceil((record.blockedUntil - now) / 1000)),
-    };
-  }
-  return { blocked: false, retryAfterSeconds: 0 };
-}
-
-function registerFailedLoginAttempt(key) {
-  const record = getLoginRateLimitRecord(key);
-  const now = Date.now();
-  record.attempts += 1;
-  if (record.attempts >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS) {
-    record.blockedUntil = now + LOGIN_RATE_LIMIT_BLOCK_MS;
-  }
-}
-
-function clearLoginRateLimit(key) {
-  loginRateLimitState.delete(key);
 }
 
 app.disable("x-powered-by");
@@ -311,6 +157,7 @@ app.use(
   })
 );
 
+app.use("/api", createCookieCsrfGuard());
 app.use("/api", createSimulationWriteGuard({ jwt, jwtSecret: JWT_SECRET }));
 
 function sanitizeUser(row) {
@@ -868,184 +715,31 @@ function buildSimulationContext(actorUser, options = {}) {
   };
 }
 
-function getBearerToken(req) {
-  const value = req.get("authorization") || "";
-  if (!value.toLowerCase().startsWith("bearer ")) return null;
-  return value.slice(7).trim() || null;
-}
+const authenticate = createAuthMiddleware({
+  jwt,
+  jwtSecret: JWT_SECRET,
+  pool,
+  toIntId,
+  sanitizeUser,
+  isSchoolBoundRole,
+  roleSuperadmin: ROLE_SUPERADMIN,
+  buildSimulationContext,
+  sendInternalError,
+});
 
-async function authenticate(req, res, next) {
-  const token = getBearerToken(req);
-  if (!token) return res.status(401).json({ error: "auth_required" });
-
-  let decoded;
-  try {
-    decoded = jwt.verify(token, JWT_SECRET);
-  } catch (_err) {
-    return res.status(401).json({ error: "invalid_token" });
-  }
-
-  const requesterUserId = toIntId(decoded?.sub);
-  if (!requesterUserId) return res.status(401).json({ error: "invalid_token" });
-
-  try {
-    const baseUserResult = await pool.query(
-      `
-      SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
-             s.name AS school_name, s.active AS school_active
-      FROM users u
-      LEFT JOIN schools s ON s.id = u.school_id
-      WHERE u.id = $1 AND u.active = TRUE
-      LIMIT 1
-      `,
-      [requesterUserId]
-    );
-
-    if (!baseUserResult.rowCount) {
-      return res.status(401).json({ error: "user_not_found_or_inactive" });
-    }
-
-    const baseUserRow = baseUserResult.rows[0];
-    if (isSchoolBoundRole(baseUserRow.role)) {
-      if (!baseUserRow.school_id) {
-        return res.status(403).json({ error: "user_school_not_configured" });
-      }
-      if (baseUserRow.school_active !== true) {
-        return res.status(403).json({ error: "school_inactive_or_not_found" });
-      }
-    }
-
-    const baseUser = sanitizeUser(baseUserRow);
-    req.actorUser = baseUser;
-
-    if (decoded?.simulation === true) {
-      if (baseUser.role !== ROLE_SUPERADMIN) {
-        return res.status(403).json({ error: "simulation_requires_superadmin" });
-      }
-
-      const simulatedUserId = toIntId(decoded?.simulatedUserId);
-      if (simulatedUserId) {
-        const simulatedResult = await pool.query(
-          `
-          SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
-                 s.name AS school_name, s.active AS school_active
-          FROM users u
-          LEFT JOIN schools s ON s.id = u.school_id
-          WHERE u.id = $1 AND u.active = TRUE
-          LIMIT 1
-          `,
-          [simulatedUserId]
-        );
-        if (!simulatedResult.rowCount) {
-          return res.status(404).json({ error: "simulation_user_not_found" });
-        }
-
-        const simulatedRow = simulatedResult.rows[0];
-        if (isSchoolBoundRole(simulatedRow.role)) {
-          if (!simulatedRow.school_id) {
-            return res.status(403).json({ error: "user_school_not_configured" });
-          }
-          if (simulatedRow.school_active !== true) {
-            return res.status(403).json({ error: "school_inactive_or_not_found" });
-          }
-        }
-
-        const simulationContext = buildSimulationContext(baseUser, {
-          type: "user",
-          targetUserId: simulatedUserId,
-          targetRole: simulatedRow.role,
-          targetSchoolId: simulatedRow.school_id || null,
-        });
-        req.user = { ...sanitizeUser(simulatedRow), simulation: simulationContext };
-        req.simulation = simulationContext;
-        return next();
-      }
-      return res.status(400).json({ error: "invalid_simulation_payload" });
-    }
-
-    req.user = baseUser;
-    req.simulation = null;
-    return next();
-  } catch (error) {
-    console.error("Authentication query error:", error);
-    return sendInternalError(res, "auth_query_failed", error);
-  }
-}
-
-function requireRoles(allowedRoles) {
-  return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "insufficient_role" });
-    }
-    next();
-  };
-}
-
-function requireWriteAccess(req, res, next) {
-  if (!req.user || !WRITE_ROLES.includes(req.user.role)) {
-    return res.status(403).json({ error: "read_only_profile" });
-  }
-  next();
-}
-
-function requireNotInSimulation(req, res, next) {
-  if (req.simulation?.active) {
-    return res.status(403).json({ error: "simulation_read_only" });
-  }
-  next();
-}
-
-function requirePermission(permissionPath) {
-  return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: "auth_required" });
-    if (!hasEffectivePermission(req.user, permissionPath)) {
-      return res.status(403).json({ error: "permission_denied", permission: permissionPath });
-    }
-    next();
-  };
-}
-
-function requireAnyPermission(permissionPaths) {
-  const allowedPaths = Array.isArray(permissionPaths) ? permissionPaths.filter(Boolean) : [];
-  return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: "auth_required" });
-    const hasAny = allowedPaths.some((permissionPath) =>
-      hasEffectivePermission(req.user, permissionPath)
-    );
-    if (!hasAny) {
-      return res.status(403).json({
-        error: "permission_denied",
-        permissionAnyOf: allowedPaths,
-      });
-    }
-    next();
-  };
-}
-
-function requireSchoolScope(options = {}) {
-  const { paramName, bodyField, queryField } = options;
-
-  return (req, res, next) => {
-    let schoolId = null;
-
-    if (paramName && req.params?.[paramName] !== undefined) {
-      schoolId = toIntId(req.params[paramName]);
-    } else if (bodyField && req.body?.[bodyField] !== undefined) {
-      schoolId = toIntId(req.body[bodyField]);
-    } else if (queryField && req.query?.[queryField] !== undefined) {
-      schoolId = toIntId(req.query[queryField]);
-    }
-
-    if (!schoolId) {
-      return res.status(400).json({ error: "invalid_school_id" });
-    }
-
-    req.targetSchoolId = schoolId;
-    if (canAccessSchool(req.user, schoolId)) return next();
-    return res.status(403).json({ error: "school_access_denied" });
-  };
-}
-
+const {
+  requireRoles,
+  requireWriteAccess,
+  requireNotInSimulation,
+  requirePermission,
+  requireAnyPermission,
+  requireSchoolScope,
+} = createPermissionMiddlewares({
+  writeRoles: WRITE_ROLES,
+  hasEffectivePermission,
+  toIntId,
+  canAccessSchool,
+});
 
 async function ensureEnterpriseSchema() {
   const client = await pool.connect();
@@ -1290,7 +984,7 @@ async function seedDefaultSuperAdmin() {
 
   console.log("Default superadmin created.");
   console.log(`Email: ${DEFAULT_ADMIN_EMAIL}`);
-  console.log(`Password: ${DEFAULT_ADMIN_PASSWORD}`);
+  console.log("Use DEFAULT_ADMIN_PASSWORD from the environment for the first login.");
   console.log("Change credentials after first login.");
 }
 
@@ -1311,6 +1005,8 @@ registerAuthRoutes(app, {
   writeAuditLog,
   isSchoolBoundRole,
   signAccessToken,
+  issueAuthCookies,
+  clearAuthCookies,
   simulationTokenTtl: SIMULATION_TOKEN_TTL,
   buildSimulationContext,
   sanitizeUser,

@@ -6,6 +6,7 @@
   const AUTH_USER_STORAGE_KEY = "authUser";
   const SIMULATION_SOURCE_TOKEN_KEY = "simulationSourceToken";
   const SIMULATION_SOURCE_USER_KEY = "simulationSourceUser";
+  const CSRF_COOKIE_NAME = "sinaltech_csrf";
 
   const ROLE_SUPERADMIN = "superadmin";
   const ROLE_ADMIN_ESCOLA = "admin_escola";
@@ -506,6 +507,9 @@
   const auditApplyFiltersBtn = document.getElementById("auditApplyFiltersBtn");
   const refreshAuditBtn = document.getElementById("refreshAuditBtn");
   const auditTableBody = document.getElementById("auditTableBody");
+  const auditPaginationMeta = document.getElementById("auditPaginationMeta");
+  const auditPrevPageBtn = document.getElementById("auditPrevPageBtn");
+  const auditNextPageBtn = document.getElementById("auditNextPageBtn");
 
   const authOverlay = document.getElementById("authOverlay");
   const loginForm = document.getElementById("loginForm");
@@ -557,6 +561,9 @@
   let previewAudioElement = null;
   let audioClipDragState = null;
   let auditLogs = [];
+  let auditTotal = 0;
+  let auditOffset = 0;
+  let auditHasMore = false;
   let backupSnapshots = [];
   let pendingScheduleRequests = [];
   let currentUser = null;
@@ -565,6 +572,19 @@
   let dashboardMonitorInFlight = null;
   const DASHBOARD_MONITOR_AUTO_REFRESH_MS = 5 * 60 * 1000;
   const DASHBOARD_MONITOR_DEDUPE_MS = 20 * 1000;
+  const TAB_CACHE_TTL_MS = {
+    schools: 2 * 60 * 1000,
+    users: 60 * 1000,
+    audios: 60 * 1000,
+    audit: 30 * 1000,
+  };
+  const AUDIT_PAGE_SIZE = 50;
+  const tabCache = {
+    schools: { loadedAt: 0, promise: null },
+    users: { loadedAt: 0, promise: null },
+    audios: { loadedAt: 0, promise: null },
+    audit: { loadedAt: 0, key: "", promise: null },
+  };
   const feedbackUI = window.feedbackUI || {};
   const STRONG_PASSWORD_HINT =
     "A senha deve ter no minimo 10 caracteres com letra maiuscula, minuscula, numero e simbolo.";
@@ -581,6 +601,50 @@
       return;
     }
     window.alert(message);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function isTabCacheFresh(tabName, options = {}) {
+    if (options.force) return false;
+    const entry = tabCache[tabName];
+    const ttl = TAB_CACHE_TTL_MS[tabName] || 0;
+    return Boolean(entry?.loadedAt && Date.now() - entry.loadedAt < ttl);
+  }
+
+  function markTabCacheLoaded(tabName, extras = {}) {
+    if (!tabCache[tabName]) return;
+    tabCache[tabName].loadedAt = Date.now();
+    Object.assign(tabCache[tabName], extras);
+  }
+
+  function invalidateTabCache(...tabNames) {
+    tabNames.forEach((tabName) => {
+      if (!tabCache[tabName]) return;
+      tabCache[tabName].loadedAt = 0;
+      tabCache[tabName].key = "";
+    });
+  }
+
+  function renderLoadingRow(target, colspan, message) {
+    if (!target) return;
+    target.innerHTML = `
+      <tr>
+        <td colspan="${colspan}" class="py-6 text-center text-slate-500">
+          <span class="inline-flex items-center gap-2">
+            <i class="fas fa-spinner animate-spin text-xs"></i>
+            ${escapeHtml(message)}
+          </span>
+        </td>
+      </tr>
+    `;
   }
 
   async function confirmAction(message, options = {}) {
@@ -878,8 +942,30 @@
     return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || "";
   }
 
+  function getCookieValue(name) {
+    const cookie = document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name}=`));
+    if (!cookie) return "";
+    const value = cookie.slice(name.length + 1);
+    try {
+      return decodeURIComponent(value);
+    } catch (_err) {
+      return value;
+    }
+  }
+
+  function getCsrfToken() {
+    return getCookieValue(CSRF_COOKIE_NAME);
+  }
+
   function setAuthSession(token, user) {
-    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    }
     localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user || {}));
   }
 
@@ -1044,10 +1130,16 @@
     if (token && !options.noAuth) {
       headers.set("Authorization", `Bearer ${token}`);
     }
+    const method = String(options.method || "GET").toUpperCase();
+    if (!["GET", "HEAD", "OPTIONS"].includes(method) && !headers.has("X-CSRF-Token")) {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+    }
 
     const response = await fetch(url, {
       ...options,
       headers,
+      credentials: options.credentials || "same-origin",
     });
 
     if (response.status === 401 && !options.allow401) {
@@ -1080,7 +1172,7 @@
   }
 
   async function startSimulationSession(payload) {
-    if (!payload?.token || !payload?.user) {
+    if (!payload?.user) {
       throw new Error("invalid_simulation_payload");
     }
 
@@ -1092,46 +1184,46 @@
       }
     }
 
-    setAuthSession(payload.token, payload.user);
+    setAuthSession(payload.token || "", payload.user);
     setCurrentUser(payload.user);
     hideAuthOverlay();
 
     const targetSchoolId = payload.user?.schoolId ? String(payload.user.schoolId) : "";
+    invalidateTabCache("users", "audios", "audit");
     await loadSchools();
-    await loadAudioTracks();
     if (targetSchoolId && String(getCurrentSchoolId() || "") !== targetSchoolId) {
       await setCurrentSchoolId(targetSchoolId, { dispatch: true });
     }
-    await loadUsers();
-    await loadAuditLogs();
     await loadDashboardMonitorInfo({ force: true });
-    await loadConfigSchedule();
     switchSection("dashboard");
     broadcastAuthChanged(true);
   }
 
   async function exitSimulation() {
-    const source = getSimulationSourceSession();
-    if (!source?.token) {
+    if (!isSimulationActive()) {
       alert("Nao ha simulacao ativa.");
       return;
     }
 
-    setAuthSession(source.token, source.user || {});
-    clearSimulationSourceSession();
-
-    const restored = await restoreSession();
-    if (!restored) {
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/simulation/exit`, { method: "POST" });
+      if (!res.ok) {
+        const reason = await readApiErrorMessage(res, "simulation_exit_failed");
+        throw new Error(reason);
+      }
+      const payload = await res.json();
+      clearSimulationSourceSession();
+      setAuthSession(payload.token || "", payload.user || {});
+      setCurrentUser(payload.user || null);
+    } catch (error) {
+      console.error("Erro ao sair da simulacao:", error);
       alert("Nao foi possivel restaurar a sessao original.");
       return;
     }
 
+    invalidateTabCache("users", "audios", "audit");
     await loadSchools();
-    await loadAudioTracks();
-    await loadUsers();
-    await loadAuditLogs();
     await loadDashboardMonitorInfo({ force: true });
-    await loadConfigSchedule();
     switchSection("dashboard");
     broadcastAuthChanged(true);
   }
@@ -1263,18 +1355,22 @@
     if (showSchools) {
       setPageTitle("Escolas");
       renderSchoolsTable();
+      loadSchools();
     }
     if (showUsers) {
       setPageTitle("Usuarios");
       renderUsersTable();
+      loadUsers();
     }
     if (showAudios) {
       setPageTitle("Audios");
       renderAudioTracksTable();
+      loadAudioTracks();
     }
     if (showAudit) {
       setPageTitle("Auditoria");
       renderAuditTable();
+      if (canManageUsers()) loadUsers();
       loadAuditLogs();
     }
 
@@ -1623,9 +1719,9 @@
     schools.forEach((school) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td class="px-4 py-3 font-medium">${school.name || "-"}</td>
-        <td class="px-4 py-3">${school.slug || "-"}</td>
-        <td class="px-4 py-3">${school.timezone || "-"}</td>
+        <td class="px-4 py-3 font-medium">${escapeHtml(school.name || "-")}</td>
+        <td class="px-4 py-3">${escapeHtml(school.slug || "-")}</td>
+        <td class="px-4 py-3">${escapeHtml(school.timezone || "-")}</td>
         <td class="px-4 py-3">
           <span class="rounded-full px-2 py-1 text-xs font-semibold ${
             school.active !== false
@@ -1673,18 +1769,17 @@
     });
   }
 
-  async function loadSchools() {
+  async function loadSchools(options = {}) {
     if (!schoolsTableBody) return;
+    if (isTabCacheFresh("schools", options)) {
+      renderSchoolsTable();
+      return;
+    }
+    if (tabCache.schools.promise && !options.force) return tabCache.schools.promise;
 
-    schoolsTableBody.innerHTML = `
-      <tr>
-        <td colspan="5" class="py-6 text-center text-slate-500">
-          Carregando escolas...
-        </td>
-      </tr>
-    `;
+    renderLoadingRow(schoolsTableBody, 5, "Carregando escolas...");
 
-    try {
+    tabCache.schools.promise = (async () => {
       const query = isSuperAdmin() ? "?includeInactive=true" : "";
       const res = await apiFetch(`${SCHOOLS_API_URL}${query}`);
       if (!res.ok) {
@@ -1699,6 +1794,11 @@
       await syncSchoolSelectors();
       renderSchoolsTable();
       buildAuditSchoolFilter();
+      markTabCacheLoaded("schools");
+    })();
+
+    try {
+      await tabCache.schools.promise;
     } catch (err) {
       console.error("Erro ao carregar escolas:", err);
       schools = [];
@@ -1708,6 +1808,8 @@
       buildSchoolOptions(configSchoolSelect, "");
       syncOperationalHistorySchoolFilter();
       await setCurrentSchoolId("", { dispatch: true });
+    } finally {
+      tabCache.schools.promise = null;
     }
   }
 
@@ -2082,10 +2184,21 @@
     return dataUrl.split(",")[1] || "";
   }
 
-  async function loadAudioTracks() {
+  async function loadAudioTracks(options = {}) {
     refreshAudioSelects();
     if (!currentUser) return;
-    try {
+    if (isTabCacheFresh("audios", options)) {
+      renderAudioStorageUsage();
+      renderAudioTracksTable();
+      return;
+    }
+    if (tabCache.audios.promise && !options.force) return tabCache.audios.promise;
+
+    if (canAccessAudiosMenu()) {
+      renderLoadingRow(audioTracksTableBody, 4, "Carregando audios...");
+    }
+
+    tabCache.audios.promise = (async () => {
       const query = canManageAudioTracks() ? "?includeInactive=true" : "";
       const [tracksRes, statsRes] = await Promise.all([
         apiFetch(`${API_BASE}/audio-tracks${query}`),
@@ -2107,10 +2220,27 @@
       refreshAudioSelects();
       renderAudioStorageUsage();
       renderAudioTracksTable();
+      window.audioTracks = audioTracks
+        .filter((track) => track?.active !== false && track?.publicUrl)
+        .map((track) => ({
+          id: `audio-${track.id}`,
+          name: track.name,
+          value: track.publicUrl,
+          url: track.publicUrl,
+          active: true,
+          durationSeconds: track.durationSeconds || 20,
+        }));
+      markTabCacheLoaded("audios");
+    })();
+
+    try {
+      await tabCache.audios.promise;
     } catch (error) {
       console.error("Erro ao carregar audios:", error);
       renderAudioStorageUsage();
       renderAudioTracksTable("Erro ao carregar audios.");
+    } finally {
+      tabCache.audios.promise = null;
     }
   }
 
@@ -2121,7 +2251,7 @@
       return;
     }
     if (message) {
-      audioTracksTableBody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-500">${message}</td></tr>`;
+      audioTracksTableBody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-500">${escapeHtml(message)}</td></tr>`;
       return;
     }
     if (!audioTracks.length) {
@@ -2133,8 +2263,8 @@
       const tr = document.createElement("tr");
       tr.className = "text-slate-700 dark:text-slate-200";
       tr.innerHTML = `
-        <td class="py-3 pr-4 font-semibold">${track.name || "-"}</td>
-        <td class="py-3 pr-4">${track.durationSeconds || 20}s<br><span class="text-xs text-slate-500">${formatBytes(track.sizeBytes)}</span></td>
+        <td class="py-3 pr-4 font-semibold">${escapeHtml(track.name || "-")}</td>
+        <td class="py-3 pr-4">${escapeHtml(track.durationSeconds || 20)}s<br><span class="text-xs text-slate-500">${escapeHtml(formatBytes(track.sizeBytes))}</span></td>
         <td class="py-3 pr-4">${track.active === false ? "Inativo" : "Ativo"}</td>
         <td class="py-3 text-right">
           <button type="button" data-action="play" class="mr-2 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
@@ -2258,7 +2388,7 @@
       alert("Audio salvo com sucesso.");
       audioForm?.reset();
       resetAudioFormState();
-      await loadAudioTracks();
+      await loadAudioTracks({ force: true });
     } catch (error) {
       console.error("Erro ao salvar audio:", error);
       alert("Erro ao salvar audio. Confira a configuracao do Supabase Storage.");
@@ -2281,7 +2411,7 @@
         const reason = await readApiErrorMessage(res, "update-audio-track-error");
         throw new Error(reason);
       }
-      await loadAudioTracks();
+      await loadAudioTracks({ force: true });
     } catch (error) {
       console.error("Erro ao atualizar audio:", error);
       alert("Erro ao atualizar audio.");
@@ -2314,7 +2444,7 @@
         throw new Error(reason);
       }
       alert("Audio excluido definitivamente.");
-      await loadAudioTracks();
+      await loadAudioTracks({ force: true });
     } catch (error) {
       console.error("Erro ao excluir audio definitivo:", error);
       alert("Erro ao excluir audio definitivamente.");
@@ -2360,7 +2490,8 @@
       }
 
       closeSchoolModal();
-      await loadSchools();
+      invalidateTabCache("schools", "audit");
+      await loadSchools({ force: true });
       alert("Escola salva com sucesso.");
     } catch (err) {
       console.error("Erro ao salvar escola:", err);
@@ -2385,7 +2516,8 @@
         const reason = await readApiErrorMessage(res, "delete-school-error");
         throw new Error(reason);
       }
-      await loadSchools();
+      invalidateTabCache("schools", "audit");
+      await loadSchools({ force: true });
       alert("Escola desativada com sucesso.");
     } catch (err) {
       console.error("Erro ao excluir escola:", err);
@@ -2960,10 +3092,10 @@
       const deactivateIcon = user.active === false ? "fa-user-check" : "fa-user-slash";
 
       tr.innerHTML = `
-        <td class="px-4 py-3 font-medium">${user.name || "-"}</td>
-        <td class="px-4 py-3">${user.email || "-"}</td>
-        <td class="px-4 py-3">${formatRoleLabel(user.role)}</td>
-        <td class="px-4 py-3">${schoolName}</td>
+        <td class="px-4 py-3 font-medium">${escapeHtml(user.name || "-")}</td>
+        <td class="px-4 py-3">${escapeHtml(user.email || "-")}</td>
+        <td class="px-4 py-3">${escapeHtml(formatRoleLabel(user.role))}</td>
+        <td class="px-4 py-3">${escapeHtml(schoolName)}</td>
         <td class="px-4 py-3">
           <span class="rounded-full px-2 py-1 text-xs font-semibold ${
             user.active !== false
@@ -3024,7 +3156,7 @@
     });
   }
 
-  async function loadUsers() {
+  async function loadUsers(options = {}) {
     if (!usersTableBody) return;
     if (!canManageUsers()) {
       users = [];
@@ -3032,16 +3164,16 @@
       buildAuditUserFilter();
       return;
     }
+    if (isTabCacheFresh("users", options)) {
+      renderUsersTable();
+      buildAuditUserFilter();
+      return;
+    }
+    if (tabCache.users.promise && !options.force) return tabCache.users.promise;
 
-    usersTableBody.innerHTML = `
-      <tr>
-        <td colspan="6" class="py-6 text-center text-slate-500">
-          Carregando usuarios...
-        </td>
-      </tr>
-    `;
+    renderLoadingRow(usersTableBody, 6, "Carregando usuarios...");
 
-    try {
+    tabCache.users.promise = (async () => {
       const res = await apiFetch(`${API_BASE}/auth/users`);
       if (!res.ok) {
         const reason = await readApiErrorMessage(res, "fetch-users-error");
@@ -3053,6 +3185,11 @@
       users.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
       renderUsersTable();
       buildAuditUserFilter();
+      markTabCacheLoaded("users");
+    })();
+
+    try {
+      await tabCache.users.promise;
     } catch (err) {
       console.error("Erro ao carregar usuarios:", err);
       users = [];
@@ -3064,6 +3201,8 @@
           </td>
         </tr>
       `;
+    } finally {
+      tabCache.users.promise = null;
     }
   }
 
@@ -3162,7 +3301,8 @@
       }
 
       closeUserModal();
-      await loadUsers();
+      invalidateTabCache("users", "audit");
+      await loadUsers({ force: true });
       alert("Usuario salvo com sucesso.");
     } catch (err) {
       console.error("Erro ao salvar usuario:", err);
@@ -3204,7 +3344,8 @@
         throw new Error(reason);
       }
 
-      await loadUsers();
+      invalidateTabCache("users", "audit");
+      await loadUsers({ force: true });
       alert(`Usuario ${nextActive ? "reativado" : "desativado"} com sucesso.`);
     } catch (error) {
       console.error("Erro ao alterar status do usuario:", error);
@@ -3236,6 +3377,7 @@
         const reason = await readApiErrorMessage(res, "reset-password-error");
         throw new Error(reason);
       }
+      invalidateTabCache("audit");
       alert("Senha resetada com sucesso.");
     } catch (error) {
       console.error("Erro ao resetar senha:", error);
@@ -3496,6 +3638,7 @@
 
   function renderAuditTable() {
     if (!auditTableBody) return;
+    updateAuditPaginationControls();
 
     if (!canViewAuditLogs()) {
       auditTableBody.innerHTML = `
@@ -3527,51 +3670,97 @@
         keys.forEach((key) => detailParts.push(`${key}: ${String(log.meta[key])}`));
       }
       tr.innerHTML = `
-        <td class="px-4 py-3 whitespace-nowrap">${whenText}</td>
-        <td class="px-4 py-3">${log.userName || log.userId || "-"}</td>
-        <td class="px-4 py-3">${log.schoolName || log.schoolId || "-"}</td>
-        <td class="px-4 py-3"><code class="text-xs">${log.action || "-"}</code></td>
-        <td class="px-4 py-3">${log.resource || "-"}</td>
-        <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${detailParts.join(" | ") || "-"}</td>
+        <td class="px-4 py-3 whitespace-nowrap">${escapeHtml(whenText)}</td>
+        <td class="px-4 py-3">${escapeHtml(log.userName || log.userId || "-")}</td>
+        <td class="px-4 py-3">${escapeHtml(log.schoolName || log.schoolId || "-")}</td>
+        <td class="px-4 py-3"><code class="text-xs">${escapeHtml(log.action || "-")}</code></td>
+        <td class="px-4 py-3">${escapeHtml(log.resource || "-")}</td>
+        <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${escapeHtml(detailParts.join(" | ") || "-")}</td>
       `;
       auditTableBody.appendChild(tr);
     });
   }
 
-  async function loadAuditLogs() {
-    if (!auditTableBody || !canViewAuditLogs()) return;
+  function getAuditCacheKey(offset = auditOffset) {
+    const params = new URLSearchParams();
+    params.set("limit", String(AUDIT_PAGE_SIZE));
+    params.set("offset", String(offset));
+    if (auditSchoolFilter?.value) params.set("schoolId", auditSchoolFilter.value);
+    if (auditUserFilter?.value) params.set("userId", auditUserFilter.value);
+    if (auditActionFilter?.value?.trim()) params.set("action", auditActionFilter.value.trim());
+    if (auditFromDate?.value) params.set("from", auditFromDate.value);
+    if (auditToDate?.value) params.set("to", auditToDate.value);
+    return params.toString();
+  }
 
-    auditTableBody.innerHTML = `
-      <tr>
-        <td colspan="6" class="py-6 text-center text-slate-500">Carregando logs...</td>
-      </tr>
-    `;
+  function updateAuditPaginationControls() {
+    const page = Math.floor(auditOffset / AUDIT_PAGE_SIZE) + 1;
+    const from = auditTotal > 0 ? auditOffset + 1 : 0;
+    const to = Math.min(auditOffset + auditLogs.length, auditTotal);
+    if (auditPaginationMeta) {
+      auditPaginationMeta.textContent = auditTotal > 0
+        ? `Pagina ${page} | ${from}-${to} de ${auditTotal}`
+        : "Pagina 1 | 0 registros";
+    }
+    if (auditPrevPageBtn) auditPrevPageBtn.disabled = auditOffset <= 0;
+    if (auditNextPageBtn) auditNextPageBtn.disabled = !auditHasMore;
+  }
+
+  async function loadAuditLogs(options = {}) {
+    if (!auditTableBody || !canViewAuditLogs()) return;
+    const nextOffset = Number.isInteger(options.offset) ? Math.max(options.offset, 0) : auditOffset;
+    const cacheKey = getAuditCacheKey(nextOffset);
+    if (isTabCacheFresh("audit", options) && tabCache.audit.key === cacheKey) {
+      renderAuditTable();
+      return;
+    }
+    if (tabCache.audit.promise && !options.force) return tabCache.audit.promise;
+
+    renderLoadingRow(auditTableBody, 6, "Carregando logs...");
+    if (auditPrevPageBtn) auditPrevPageBtn.disabled = true;
+    if (auditNextPageBtn) auditNextPageBtn.disabled = true;
 
     const params = new URLSearchParams();
-    params.set("limit", "200");
+    params.set("limit", String(AUDIT_PAGE_SIZE));
+    params.set("offset", String(nextOffset));
     if (auditSchoolFilter?.value) params.set("schoolId", auditSchoolFilter.value);
     if (auditUserFilter?.value) params.set("userId", auditUserFilter.value);
     if (auditActionFilter?.value?.trim()) params.set("action", auditActionFilter.value.trim());
     if (auditFromDate?.value) params.set("from", auditFromDate.value);
     if (auditToDate?.value) params.set("to", auditToDate.value);
 
-    try {
+    tabCache.audit.promise = (async () => {
       const res = await apiFetch(`${API_BASE}/audit-logs?${params.toString()}`);
       if (!res.ok) {
         const reason = await readApiErrorMessage(res, "fetch-audit-logs-error");
         throw new Error(reason);
       }
       const data = await res.json();
-      auditLogs = Array.isArray(data) ? data : [];
+      auditLogs = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+      auditTotal = Array.isArray(data) ? auditLogs.length : Number(data?.total) || 0;
+      auditOffset = Array.isArray(data) ? 0 : Number(data?.offset) || nextOffset;
+      auditHasMore = Array.isArray(data)
+        ? false
+        : Boolean(data?.hasMore);
       renderAuditTable();
+      markTabCacheLoaded("audit", { key: cacheKey });
+    })();
+
+    try {
+      await tabCache.audit.promise;
     } catch (error) {
       console.error("Erro ao carregar logs de auditoria:", error);
       auditLogs = [];
+      auditTotal = 0;
+      auditHasMore = false;
+      updateAuditPaginationControls();
       auditTableBody.innerHTML = `
         <tr>
           <td colspan="6" class="py-6 text-center text-red-600">Erro ao carregar logs</td>
         </tr>
       `;
+    } finally {
+      tabCache.audit.promise = null;
     }
   }
 
@@ -4084,7 +4273,7 @@
     if (dashboardHttpMetricsBody) {
       dashboardHttpMetricsBody.innerHTML = `
         <tr>
-          <td colspan="7" class="py-3 text-slate-500 dark:text-slate-400">${message}</td>
+          <td colspan="7" class="py-3 text-slate-500 dark:text-slate-400">${escapeHtml(message)}</td>
         </tr>
       `;
     }
@@ -4136,13 +4325,13 @@
       const latencyAvg = Number.isFinite(item.latencyAvgMs) ? `${item.latencyAvgMs} ms` : "--";
       const latencyMax = Number.isFinite(item.latencyMaxMs) ? `${item.latencyMaxMs} ms` : "--";
       tr.innerHTML = `
-        <td class="py-2 pr-3 font-semibold text-slate-700 dark:text-slate-200">${item.endpoint || "-"}</td>
-        <td class="py-2 pr-3">${item.requests ?? "--"}</td>
-        <td class="py-2 pr-3">${item.errors ?? "--"}</td>
-        <td class="py-2 pr-3">${errorRate}</td>
-        <td class="py-2 pr-3">${latencyAvg}</td>
-        <td class="py-2 pr-3">${latencyMax}</td>
-        <td class="py-2 pr-3">${item.lastStatusCode ?? "--"}</td>
+        <td class="py-2 pr-3 font-semibold text-slate-700 dark:text-slate-200">${escapeHtml(item.endpoint || "-")}</td>
+        <td class="py-2 pr-3">${escapeHtml(item.requests ?? "--")}</td>
+        <td class="py-2 pr-3">${escapeHtml(item.errors ?? "--")}</td>
+        <td class="py-2 pr-3">${escapeHtml(errorRate)}</td>
+        <td class="py-2 pr-3">${escapeHtml(latencyAvg)}</td>
+        <td class="py-2 pr-3">${escapeHtml(latencyMax)}</td>
+        <td class="py-2 pr-3">${escapeHtml(item.lastStatusCode ?? "--")}</td>
       `;
       dashboardHttpMetricsBody.appendChild(tr);
     });
@@ -4509,11 +4698,11 @@
           tr.className =
             "cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/60";
           tr.innerHTML = `
-            <td class="px-4 py-3">${label}</td>
-            <td class="px-4 py-3">${signal.time}</td>
-            <td class="px-4 py-3">${signal.name}</td>
-            <td class="px-4 py-3">${musicLabels[signal.music] || signal.music}</td>
-            <td class="px-4 py-3">${signal.duration || 15}s</td>
+            <td class="px-4 py-3">${escapeHtml(label)}</td>
+            <td class="px-4 py-3">${escapeHtml(signal.time)}</td>
+            <td class="px-4 py-3">${escapeHtml(signal.name)}</td>
+            <td class="px-4 py-3">${escapeHtml(musicLabels[signal.music] || signal.music)}</td>
+            <td class="px-4 py-3">${escapeHtml(signal.duration || 15)}s</td>
             <td class="px-4 py-3 text-center">
               ${
                 canWrite()
@@ -4829,6 +5018,7 @@
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ email, password }),
       });
 
@@ -4839,12 +5029,10 @@
 
       const data = await res.json();
       clearSimulationSourceSession();
-      setAuthSession(data.token, data.user);
+      setAuthSession(data.token || "", data.user);
       setCurrentUser(data.user);
       hideAuthOverlay();
       await loadSchools();
-      await loadAudioTracks();
-      await loadUsers();
       await loadDashboardMonitorInfo({ force: true });
       switchSection("dashboard");
       broadcastAuthChanged(true);
@@ -4858,15 +5046,6 @@
   }
 
   async function restoreSession() {
-    const token = getAuthToken();
-    if (!token) {
-      clearAuthSession();
-      setCurrentUser(null);
-      showAuthOverlay();
-      broadcastAuthChanged(false);
-      return false;
-    }
-
     try {
       const res = await apiFetch(`${API_BASE}/auth/me`, { allow401: true });
       if (!res.ok) {
@@ -4891,13 +5070,21 @@
   }
 
   async function logout() {
+    await apiFetch(`${API_BASE}/auth/logout`, { method: "POST", allow401: true }).catch((error) => {
+      console.error("Erro ao encerrar sessao no servidor:", error);
+    });
     clearAuthSession();
     setCurrentUser(null);
     schools = [];
     templates = [];
     users = [];
+    audioTracks = [];
     auditLogs = [];
+    auditTotal = 0;
+    auditOffset = 0;
+    auditHasMore = false;
     backupSnapshots = [];
+    invalidateTabCache("schools", "users", "audios", "audit");
     renderSchoolsTable();
     renderUsersTable();
     renderAuditTable();
@@ -4921,7 +5108,7 @@
     window.apiFetch = apiFetch;
     window.getAuthToken = getAuthToken;
     window.getCurrentSchoolId = getCurrentSchoolId;
-    window.isAuthenticated = () => Boolean(getAuthToken() && currentUser);
+    window.isAuthenticated = () => Boolean(currentUser);
     populateUserPresetOptions();
 
     navDashboard?.addEventListener("click", (event) => {
@@ -4991,7 +5178,7 @@
     audioClipWindow?.addEventListener("keydown", handleAudioClipKeyboard);
     previewAudioClipBtn?.addEventListener("click", previewSelectedAudioClip);
     audioForm?.addEventListener("submit", saveAudioTrack);
-    refreshAudioTracksBtn?.addEventListener("click", loadAudioTracks);
+    refreshAudioTracksBtn?.addEventListener("click", () => loadAudioTracks({ force: true }));
 
     saveTemplateBtn?.addEventListener("click", saveTemplateFromCurrentSchool);
     cloneTemplateBtn?.addEventListener("click", applySelectedTemplate);
@@ -5002,8 +5189,19 @@
     restoreBackupBtn?.addEventListener("click", restoreSelectedBackup);
     refreshScheduleRequestsBtn?.addEventListener("click", loadScheduleChangeRequests);
 
-    auditApplyFiltersBtn?.addEventListener("click", loadAuditLogs);
-    refreshAuditBtn?.addEventListener("click", loadAuditLogs);
+    auditApplyFiltersBtn?.addEventListener("click", () => {
+      auditOffset = 0;
+      loadAuditLogs({ force: true, offset: 0 });
+    });
+    refreshAuditBtn?.addEventListener("click", () => loadAuditLogs({ force: true }));
+    auditPrevPageBtn?.addEventListener("click", () => {
+      const offset = Math.max(0, auditOffset - AUDIT_PAGE_SIZE);
+      loadAuditLogs({ offset });
+    });
+    auditNextPageBtn?.addEventListener("click", () => {
+      if (!auditHasMore) return;
+      loadAuditLogs({ offset: auditOffset + AUDIT_PAGE_SIZE });
+    });
 
     refreshDashboardMonitorBtn?.addEventListener("click", () =>
       loadDashboardMonitorInfo({ force: true })
@@ -5062,9 +5260,6 @@
     const authenticated = await restoreSession();
     if (authenticated) {
       await loadSchools();
-      await loadAudioTracks();
-      await loadUsers();
-      await loadAuditLogs();
       await loadDashboardMonitorInfo();
       switchSection("dashboard");
     } else {

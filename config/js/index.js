@@ -14,12 +14,41 @@ const AUTH_TOKEN_STORAGE_KEY = "authToken";
 const AUTH_USER_STORAGE_KEY = "authUser";
 const CURRENT_SCHOOL_STORAGE_KEY = "currentSchoolId";
 const PERIODS = ["morning", "afternoon", "afternoonFriday"];
+const CSRF_COOKIE_NAME = "sinaltech_csrf";
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function getAuthToken() {
   if (typeof window.getAuthToken === "function") {
     return window.getAuthToken() || "";
   }
   return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || "";
+}
+
+function hasAuthSession() {
+  if (typeof window.isAuthenticated === "function") return window.isAuthenticated();
+  return Boolean(getAuthToken());
+}
+
+function getCookieValue(name) {
+  const cookie = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+  if (!cookie) return "";
+  const value = cookie.slice(name.length + 1);
+  try {
+    return decodeURIComponent(value);
+  } catch (_err) {
+    return value;
+  }
 }
 
 async function apiFetchWithAuth(url, options = {}) {
@@ -32,10 +61,16 @@ async function apiFetchWithAuth(url, options = {}) {
   if (token && !options.noAuth) {
     headers.set("Authorization", `Bearer ${token}`);
   }
+  const method = String(options.method || "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && !headers.has("X-CSRF-Token")) {
+    const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
+    if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  }
 
   return fetch(url, {
     ...options,
     headers,
+    credentials: options.credentials || "same-origin",
   });
 }
 
@@ -67,8 +102,7 @@ async function loadDashboardAudioTracks() {
     dashboardAudioTracksLoaded = true;
     return dashboardAudioTracks;
   }
-  const token = getAuthToken();
-  if (!token) return [];
+  if (!hasAuthSession()) return [];
   try {
     const response = await apiFetchWithAuth(`${API_BASE}/audio-tracks`);
     if (!response.ok) throw new Error("audio-tracks-fetch-error");
@@ -155,10 +189,9 @@ async function loadSchedule() {
   clearTimers();
 
   const schoolId = getCurrentSchoolId();
-  const token = getAuthToken();
   const select = document.getElementById("periodFilter");
 
-  if (!token || !schoolId) {
+  if (!hasAuthSession() || !schoolId) {
     resetDashboardState();
     if (select) select.value = currentPeriod || "morning";
     return;
@@ -372,10 +405,10 @@ function renderScheduleByPeriod(period) {
       <td class="py-3 px-4 w-10 text-center">
         <i class="fas fa-volume-up playing-icon"></i>
       </td>
-      <td class="py-3 px-4 font-bold">${signal.time || "--:--"}</td>
-      <td class="py-3 px-4 font-medium">${signal.name || "-"}</td>
-      <td class="py-3 px-4 text-slate-500">${friendlyMusic}</td>
-      <td class="py-3 px-4">${signal.duration ? `${signal.duration}s` : ""}</td>
+      <td class="py-3 px-4 font-bold">${escapeHtml(signal.time || "--:--")}</td>
+      <td class="py-3 px-4 font-medium">${escapeHtml(signal.name || "-")}</td>
+      <td class="py-3 px-4 text-slate-500">${escapeHtml(friendlyMusic)}</td>
+      <td class="py-3 px-4">${escapeHtml(signal.duration ? `${signal.duration}s` : "")}</td>
     `;
     tableBody.appendChild(row);
   });
@@ -565,7 +598,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   currentPeriod = PERIODS.includes(detectCurrentPeriod()) ? detectCurrentPeriod() : "morning";
   applyDashboardPermissions(getAuthUser());
-  if (getAuthToken()) {
+  if (hasAuthSession()) {
     loadSchedule();
   } else {
     resetDashboardState();

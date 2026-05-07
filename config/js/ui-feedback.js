@@ -32,12 +32,20 @@
     };
     const palette = palettes[type] || palettes.info;
     item.className = `pointer-events-auto w-full max-w-xl rounded-2xl border px-4 py-3 text-sm shadow-2xl backdrop-blur ${palette}`;
-    item.innerHTML = `
-      <div class="flex items-start gap-3">
-        <i class="fas fa-circle-info mt-0.5 opacity-90"></i>
-        <p class="flex-1 whitespace-pre-line">${String(message || "").trim() || "Atualizacao realizada."}</p>
-      </div>
-    `;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "flex items-start gap-3";
+
+    const icon = document.createElement("i");
+    icon.className = "fas fa-circle-info mt-0.5 opacity-90";
+    wrapper.appendChild(icon);
+
+    const text = document.createElement("p");
+    text.className = "flex-1 whitespace-pre-line";
+    text.textContent = String(message || "").trim() || "Atualizacao realizada.";
+    wrapper.appendChild(text);
+
+    item.appendChild(wrapper);
     host.appendChild(item);
 
     setTimeout(() => {
