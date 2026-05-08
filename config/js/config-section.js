@@ -1379,12 +1379,8 @@
 
     if (dashboardAudioCount) dashboardAudioCount.textContent = audioTracks.length ? String(audioTracks.length) : "--";
     if (dashboardAudioUsage) {
-      const percent =
-        Number.isFinite(audioStorageStats?.usagePercent)
-          ? `${Math.round(audioStorageStats.usagePercent)}%`
-          : Number.isFinite(audioStorageStats?.percentUsed)
-            ? `${Math.round(audioStorageStats.percentUsed)}%`
-            : "--";
+      const usagePercent = getAudioStorageUsagePercent();
+      const percent = Number.isFinite(usagePercent) ? `${Math.round(usagePercent)}%` : "--";
       dashboardAudioUsage.textContent = `${percent} do limite usado`;
     }
   }
@@ -2149,6 +2145,27 @@
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  function getAudioStorageUsagePercent() {
+    if (Number.isFinite(audioStorageStats?.usagePercent)) {
+      return audioStorageStats.usagePercent;
+    }
+    if (Number.isFinite(audioStorageStats?.percentUsed)) {
+      return audioStorageStats.percentUsed;
+    }
+
+    const total = Number(audioStorageStats?.totalSizeBytes);
+    const limit = Number(audioStorageStats?.softLimitBytes);
+    if (Number.isFinite(total) && Number.isFinite(limit) && limit > 0) {
+      return (total / limit) * 100;
+    }
+
+    const fallbackTotal = audioTracks.reduce(
+      (sum, track) => sum + (Number(track?.sizeBytes) || 0),
+      0
+    );
+    return fallbackTotal > 0 ? null : 0;
   }
 
   function renderAudioStorageUsage() {

@@ -63,14 +63,18 @@ function registerAudioRoutes(
         );
         const row = result.rows[0] || {};
         const totalSizeBytes = Number(row.total_size_bytes) || 0;
+        const softLimitBytes = Number(audioStorageSoftLimitBytes) || 0;
+        const usagePercent = softLimitBytes > 0 ? (totalSizeBytes / softLimitBytes) * 100 : 0;
         res.json({
           totalTracks: Number(row.total_tracks) || 0,
           activeTracks: Number(row.active_tracks) || 0,
           totalSizeBytes,
           activeSizeBytes: Number(row.active_size_bytes) || 0,
-          softLimitBytes: audioStorageSoftLimitBytes,
-          warningThresholdBytes: Math.floor(audioStorageSoftLimitBytes * 0.8),
-          warning: totalSizeBytes >= audioStorageSoftLimitBytes * 0.8,
+          softLimitBytes,
+          usagePercent,
+          percentUsed: usagePercent,
+          warningThresholdBytes: Math.floor(softLimitBytes * 0.8),
+          warning: softLimitBytes > 0 && totalSizeBytes >= softLimitBytes * 0.8,
           uploadMaxBytes: audioUploadMaxBytes,
         });
       } catch (error) {

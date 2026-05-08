@@ -75,7 +75,7 @@ function registerBackupsRoutes(
     "/api/schools/:id/backups",
     authenticate,
     requirePermission("menus.config"),
-    requirePermission("features.config_backup_export"),
+    requirePermission("features.config_backup_refresh"),
     requireSchoolScope({ paramName: "id" }),
     async (req, res) => {
       const limitRaw = Number.parseInt(String(req.query.limit || "30"), 10);
@@ -134,7 +134,7 @@ function registerBackupsRoutes(
     "/api/schools/:id/backups/:backupId",
     authenticate,
     requirePermission("menus.config"),
-    requirePermission("features.config_backup_export"),
+    requirePermission("features.config_backup_preview"),
     requireSchoolScope({ paramName: "id" }),
     async (req, res) => {
       const backupId = toIntId(req.params.backupId);

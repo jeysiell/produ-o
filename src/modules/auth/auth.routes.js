@@ -3,6 +3,7 @@ function registerAuthRoutes(app, deps) {
     pool,
     authenticate,
     requireRoles,
+    requirePermission,
     requireNotInSimulation,
     roleSuperadmin,
     toIntId,
@@ -133,6 +134,8 @@ function registerAuthRoutes(app, deps) {
   app.post(
     "/api/auth/simulate/user/:id",
     authenticate,
+    requirePermission("menus.users"),
+    requirePermission("features.users_simulate_login"),
     requireRoles([roleSuperadmin]),
     requireNotInSimulation,
     async (req, res) => {

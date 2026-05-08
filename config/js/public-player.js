@@ -50,18 +50,22 @@
     return normalized;
   }
 
-  function getTodayPeriodKey() {
+  function getPeriodKeyForDate(date = new Date()) {
     const timezone = state.school?.timezone || "America/Sao_Paulo";
     let weekday = "";
     try {
       weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: timezone }).format(
-        new Date()
+        date
       );
     } catch (_error) {
-      weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(new Date());
+      weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date);
     }
     if (weekday === "Fri") return "afternoonFriday";
     return "afternoon";
+  }
+
+  function getTodayPeriodKey() {
+    return getPeriodKeyForDate(new Date());
   }
 
   function getSchoolTimeParts() {
@@ -95,11 +99,45 @@
     };
   }
 
-  function getSignalsForToday() {
-    const todayAfternoon = getTodayPeriodKey();
-    return [...state.schedule.morning, ...state.schedule[todayAfternoon]]
+  function getSchoolCalendarDate(dayOffset = 0) {
+    const schoolTime = getSchoolTimeParts();
+    const [year, month, day] = schoolTime.dateKey.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day + dayOffset, 12, 0, 0));
+  }
+
+  function getDayOffsetLabel(dayOffset) {
+    if (dayOffset === 0) return "hoje";
+    if (dayOffset === 1) return "amanhã";
+    return `em ${dayOffset} dias`;
+  }
+
+  function getSignalsForDayOffset(dayOffset = 0) {
+    const targetDate = getSchoolCalendarDate(dayOffset);
+    const afternoonPeriod = getPeriodKeyForDate(targetDate);
+    return [...state.schedule.morning, ...state.schedule[afternoonPeriod]]
       .filter((signal) => signal?.time && signal?.music)
-      .sort((a, b) => String(a.time).localeCompare(String(b.time)));
+      .sort((a, b) => String(a.time).localeCompare(String(b.time)))
+      .map((signal) => ({
+        ...signal,
+        dayOffset,
+        dayLabel: getDayOffsetLabel(dayOffset),
+      }));
+  }
+
+  function getSignalsForToday() {
+    return getSignalsForDayOffset(0);
+  }
+
+  function getTimelineSignals(nowMinutes = getCurrentMinutes()) {
+    const todaySignals = getSignalsForToday();
+    const upcomingToday = todaySignals.find((signal) => {
+      const minutes = getSignalMinutes(signal);
+      return minutes !== null && minutes >= nowMinutes;
+    });
+    if (upcomingToday || !todaySignals.length) return todaySignals;
+
+    const tomorrowSignals = getSignalsForDayOffset(1);
+    return [...todaySignals, ...tomorrowSignals];
   }
 
   function formatSignalLabel(signal) {
@@ -107,7 +145,7 @@
   }
 
   function getSignalKey(signal) {
-    return `${signal?.time || ""}-${signal?.name || ""}-${signal?.music || ""}`;
+    return `${signal?.dayOffset || 0}-${signal?.time || ""}-${signal?.name || ""}-${signal?.music || ""}`;
   }
 
   function formatAudioTrackLabel(track) {
@@ -142,6 +180,7 @@
 
   function getSignalStatus(signal, upcoming, nowMinutes) {
     if (upcoming && signal === upcoming) return "next";
+    if (Number(signal?.dayOffset) > 0) return "waiting";
     const signalMinutes = getSignalMinutes(signal);
     if (signalMinutes !== null && signalMinutes < nowMinutes) return "done";
     return "waiting";
@@ -159,6 +198,7 @@
   function formatMinutesUntil(signal, nowMinutes) {
     const signalMinutes = getSignalMinutes(signal);
     if (signalMinutes === null) return "";
+    if (Number(signal?.dayOffset) > 0) return signal?.dayLabel || "proximo dia";
     const diff = Math.max(0, signalMinutes - nowMinutes);
     if (diff === 0) return "agora";
     if (diff === 1) return "falta 1 min";
@@ -168,7 +208,7 @@
   function getTimelineFocus(todaySignals, nowMinutes) {
     const upcoming = todaySignals.find((signal) => {
       const minutes = getSignalMinutes(signal);
-      return minutes !== null && minutes >= nowMinutes;
+      return Number(signal?.dayOffset) > 0 || (minutes !== null && minutes >= nowMinutes);
     });
     const lastPlayed = getLastPlayedSignal(todaySignals, nowMinutes);
     return upcoming || lastPlayed || todaySignals[0] || null;
@@ -193,15 +233,15 @@
 
   function renderSchedule(options = {}) {
     scheduleSections.innerHTML = "";
-    const todaySignals = getSignalsForToday();
     const nowMinutes = getCurrentMinutes();
-    const upcoming = todaySignals.find((signal) => {
+    const timelineSignals = getTimelineSignals(nowMinutes);
+    const upcoming = timelineSignals.find((signal) => {
       const minutes = getSignalMinutes(signal);
-      return minutes !== null && minutes >= nowMinutes;
-    });
-    syncEmphasizedSignal(todaySignals, nowMinutes);
+      return Number(signal?.dayOffset) > 0 || (minutes !== null && minutes >= nowMinutes);
+    }) || timelineSignals.find((signal) => Number(signal?.dayOffset) > 0) || null;
+    syncEmphasizedSignal(timelineSignals, nowMinutes);
 
-    if (!todaySignals.length) {
+    if (!timelineSignals.length) {
       scheduleSections.innerHTML = `
         <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-sm font-bold text-slate-500 transition-colors dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
           Nenhum sinal cadastrado para hoje.
@@ -210,7 +250,7 @@
       return;
     }
 
-    todaySignals.forEach((signal) => {
+    timelineSignals.forEach((signal) => {
       const status = getSignalStatus(signal, upcoming, nowMinutes);
       const row = document.createElement("article");
       const statusStyles = {
@@ -250,6 +290,7 @@
             <div class="min-w-0">
               <p class="truncate text-lg font-black text-slate-950 dark:text-slate-100">${escapeHtml(signal.name || "Sinal")}</p>
               <p class="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">${escapeHtml(signal.time || "--:--")} - ${escapeHtml(statusStyles.meta)}</p>
+              ${Number(signal?.dayOffset) > 0 ? `<p class="mt-1 text-xs font-black uppercase tracking-wide text-sky-600 dark:text-sky-300">${escapeHtml(signal.dayLabel || "proximo dia")}</p>` : ""}
             </div>
             <span class="shrink-0 text-sm font-black ${statusStyles.labelClass}">${statusStyles.label}</span>
           </div>
@@ -299,17 +340,21 @@
   function updateNextSignal() {
     const nowMinutes = getCurrentMinutes();
     const todaySignals = getSignalsForToday();
-    const upcoming = todaySignals.find((signal) => {
+    const upcomingToday = todaySignals.find((signal) => {
       const minutes = getSignalMinutes(signal);
       return minutes !== null && minutes >= nowMinutes;
     });
+    const upcoming = upcomingToday || getSignalsForDayOffset(1)[0] || null;
     const lastPlayed = getLastPlayedSignal(todaySignals, nowMinutes);
-    syncEmphasizedSignal(todaySignals, nowMinutes);
-    nextSignal.textContent = upcoming ? formatSignalLabel(upcoming) : "Nenhum sinal restante hoje";
+    syncEmphasizedSignal(getTimelineSignals(nowMinutes), nowMinutes);
+    nextSignal.textContent = upcoming ? formatSignalLabel(upcoming) : "Nenhum proximo sinal cadastrado";
     if (signalCount) {
-      signalCount.textContent = `${todaySignals.length} sinal${todaySignals.length === 1 ? "" : "is"} hoje`;
+      signalCount.textContent =
+        upcomingToday || !upcoming
+          ? `${todaySignals.length} sinal${todaySignals.length === 1 ? "" : "is"} hoje`
+          : `${todaySignals.length} hoje - proximo amanhã`;
     }
-    if (audioCount) audioCount.textContent = `${todaySignals.length} cadastrado${todaySignals.length === 1 ? "" : "s"}`;
+    if (audioCount) audioCount.textContent = `${todaySignals.length} horario${todaySignals.length === 1 ? "" : "s"}`;
     if (playingSignal) {
       playingSignal.textContent = lastPlayed
         ? `${lastPlayed.name || "Sinal"} • ${lastPlayed.time || "--:--"}`
@@ -444,7 +489,7 @@
       state.audioTracks = Array.isArray(payload.audioTracks) ? payload.audioTracks : [];
 
       schoolName.textContent = state.school?.name || "Player publico";
-      setStatus("Link publico de sinais. Sem acesso ao painel administrativo.");
+      setStatus("");
       renderSchedule({ scrollToEmphasis: true, behavior: "auto" });
       renderManualOptions();
       tick();

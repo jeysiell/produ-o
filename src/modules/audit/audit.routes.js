@@ -23,6 +23,23 @@ function registerAuditRoutes(app, deps) {
       const userIdFilter = req.query.userId ? toIntId(req.query.userId) : null;
       const fromFilter = req.query.from ? parseDateFilter(req.query.from) : null;
       const toFilter = req.query.to ? parseDateFilter(req.query.to, { endOfDay: true }) : null;
+      const usesAuditFilters =
+        offset > 0 ||
+        Boolean(req.query.schoolId) ||
+        Boolean(req.query.userId) ||
+        Boolean(req.query.action) ||
+        Boolean(req.query.from) ||
+        Boolean(req.query.to);
+
+      if (usesAuditFilters) {
+        const effective = req.user?.effectivePermissions;
+        if (!effective?.features?.audit_filters) {
+          return res.status(403).json({
+            error: "permission_denied",
+            permission: "features.audit_filters",
+          });
+        }
+      }
 
       if (req.query.from && !fromFilter) return res.status(400).json({ error: "invalid_from_date" });
       if (req.query.to && !toFilter) return res.status(400).json({ error: "invalid_to_date" });

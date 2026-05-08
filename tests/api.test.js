@@ -141,6 +141,88 @@ describe("API security and permission flows", () => {
     expect(response.body.error).toBe("permission_denied");
   });
 
+  test("POST /api/schools requires granular create-school permission", async () => {
+    installPoolMock(async (sql) => {
+      const text = String(sql);
+      if (text.includes("WHERE u.id = $1 AND u.active = TRUE")) {
+        return {
+          rowCount: 1,
+          rows: [
+            buildUserRow({
+              id: 31,
+              role: "superadmin",
+              school_id: null,
+              school_name: null,
+              permissions: {
+                menus: { schools: true },
+                features: { schools_create: false },
+              },
+            }),
+          ],
+        };
+      }
+      throw new Error(`Unexpected query in school create permission test: ${text.slice(0, 90)}`);
+    });
+
+    const token = buildToken(31, { role: "superadmin", schoolId: null });
+    const response = await request(app)
+      .post("/api/schools")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Escola Nova", timezone: "America/Sao_Paulo" });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("permission_denied");
+    expect(response.body.permission).toBe("features.schools_create");
+  });
+
+  test("GET /api/audit-logs requires audit_filters for filtered queries", async () => {
+    installPoolMock(async (sql) => {
+      const text = String(sql);
+      if (text.includes("WHERE u.id = $1 AND u.active = TRUE")) {
+        return {
+          rowCount: 1,
+          rows: [
+            buildUserRow({
+              id: 32,
+              role: "superadmin",
+              school_id: null,
+              school_name: null,
+              permissions: {
+                menus: { audit: true },
+                features: { audit_view: true, audit_filters: false },
+              },
+            }),
+          ],
+        };
+      }
+      throw new Error(`Unexpected query in audit filter permission test: ${text.slice(0, 90)}`);
+    });
+
+    const token = buildToken(32, { role: "superadmin", schoolId: null });
+    const response = await request(app)
+      .get("/api/audit-logs?action=update_user")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("permission_denied");
+    expect(response.body.permission).toBe("features.audit_filters");
+  });
+
+  test("normalizeStoredPermissionsForRole removes obsolete keys and fills current keys", () => {
+    const normalized = __testUtils.normalizeStoredPermissionsForRole("admin_escola", {
+      menus: { dashboard: true },
+      features: {
+        dashboard_manual_play: true,
+        config_schedule_write: false,
+      },
+    });
+
+    expect(normalized.features.dashboard_manual_play).toBeUndefined();
+    expect(normalized.features.dashboard_summary_view).toBe(true);
+    expect(normalized.features.config_schedule_write).toBe(false);
+    expect(normalized.features.config_backup_preview).toBe(true);
+  });
+
   test("getAuthToken reads bearer first and cookie as fallback", () => {
     const cookieOnly = getAuthToken({
       headers: { cookie: "sinaltech_auth=cookie-token; sinaltech_csrf=csrf-value" },

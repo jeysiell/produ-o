@@ -4,6 +4,7 @@ function registerSchoolsRoutes(
     pool,
     authenticate,
     requireRoles,
+    requirePermission,
     roleSuperadmin,
     slugify,
     toIntId,
@@ -51,55 +52,64 @@ function registerSchoolsRoutes(
     }
   });
 
-  app.post("/api/schools", authenticate, requireRoles([roleSuperadmin]), async (req, res) => {
-    try {
-      const name = String(req.body?.name || "").trim();
-      const timezone = String(req.body?.timezone || "America/Sao_Paulo").trim();
-      const active = req.body?.active === false ? false : true;
-      const slug = slugify(req.body?.slug || name);
+  app.post(
+    "/api/schools",
+    authenticate,
+    requirePermission("menus.schools"),
+    requirePermission("features.schools_create"),
+    requireRoles([roleSuperadmin]),
+    async (req, res) => {
+      try {
+        const name = String(req.body?.name || "").trim();
+        const timezone = String(req.body?.timezone || "America/Sao_Paulo").trim();
+        const active = req.body?.active === false ? false : true;
+        const slug = slugify(req.body?.slug || name);
 
-      if (!name) {
-        return res.status(400).json({ error: "name_is_required" });
+        if (!name) {
+          return res.status(400).json({ error: "name_is_required" });
+        }
+        if (!slug) {
+          return res.status(400).json({ error: "slug_is_required" });
+        }
+
+        const result = await pool.query(
+          `
+          INSERT INTO schools (name, slug, timezone, active, public_token)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING id, name, slug, timezone, active, public_token, created_at
+          `,
+          [name, slug, timezone, active, generateSchoolPublicToken()]
+        );
+
+        const created = mapSchool(result.rows[0]);
+        const meta = getRequestMeta(req);
+        await writeAuditLog({
+          userId: req.user.id,
+          schoolId: Number(created.id),
+          action: "create_school",
+          resource: "school",
+          resourceId: created.id,
+          afterData: created,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+
+        res.status(201).json(created);
+      } catch (error) {
+        if (error?.code === "23505") {
+          return res.status(409).json({ error: "duplicate_school_slug_or_name" });
+        }
+        console.error("POST /api/schools error:", error);
+        sendInternalError(res, "failed_to_create_school", error);
       }
-      if (!slug) {
-        return res.status(400).json({ error: "slug_is_required" });
-      }
-
-      const result = await pool.query(
-        `
-        INSERT INTO schools (name, slug, timezone, active, public_token)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, name, slug, timezone, active, public_token, created_at
-        `,
-        [name, slug, timezone, active, generateSchoolPublicToken()]
-      );
-
-      const created = mapSchool(result.rows[0]);
-      const meta = getRequestMeta(req);
-      await writeAuditLog({
-        userId: req.user.id,
-        schoolId: Number(created.id),
-        action: "create_school",
-        resource: "school",
-        resourceId: created.id,
-        afterData: created,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
-
-      res.status(201).json(created);
-    } catch (error) {
-      if (error?.code === "23505") {
-        return res.status(409).json({ error: "duplicate_school_slug_or_name" });
-      }
-      console.error("POST /api/schools error:", error);
-      sendInternalError(res, "failed_to_create_school", error);
     }
-  });
+  );
 
   app.patch(
     "/api/schools/:id",
     authenticate,
+    requirePermission("menus.schools"),
+    requirePermission("features.schools_edit"),
     requireRoles([roleSuperadmin]),
     async (req, res) => {
       const schoolId = toIntId(req.params.id);
@@ -181,6 +191,8 @@ function registerSchoolsRoutes(
   app.delete(
     "/api/schools/:id",
     authenticate,
+    requirePermission("menus.schools"),
+    requirePermission("features.schools_disable"),
     requireRoles([roleSuperadmin]),
     async (req, res) => {
       const schoolId = toIntId(req.params.id);

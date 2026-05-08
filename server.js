@@ -715,6 +715,10 @@ function buildSimulationContext(actorUser, options = {}) {
   };
 }
 
+function normalizeStoredPermissionsForRole(role, permissions) {
+  return getEffectivePermissions(role, normalizePermissionsPayload(permissions));
+}
+
 const authenticate = createAuthMiddleware({
   jwt,
   jwtSecret: JWT_SECRET,
@@ -795,6 +799,23 @@ async function ensureEnterpriseSchema() {
       ALTER TABLE users
       ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb
     `);
+
+    const usersWithPermissions = await client.query(`
+      SELECT id, role, permissions
+      FROM users
+      ORDER BY id ASC
+    `);
+
+    for (const user of usersWithPermissions.rows) {
+      const normalizedPermissions = normalizeStoredPermissionsForRole(user.role, user.permissions);
+      if (JSON.stringify(user.permissions || {}) === JSON.stringify(normalizedPermissions)) {
+        continue;
+      }
+      await client.query("UPDATE users SET permissions = $1 WHERE id = $2", [
+        JSON.stringify(normalizedPermissions),
+        user.id,
+      ]);
+    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS audit_logs (
@@ -994,6 +1015,7 @@ registerAuthRoutes(app, {
   pool,
   authenticate,
   requireRoles,
+  requirePermission,
   requireNotInSimulation,
   roleSuperadmin: ROLE_SUPERADMIN,
   toIntId,
@@ -1043,6 +1065,7 @@ registerSchoolsRoutes(app, {
   pool,
   authenticate,
   requireRoles,
+  requirePermission,
   roleSuperadmin: ROLE_SUPERADMIN,
   slugify,
   toIntId,
@@ -1261,7 +1284,12 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, initializeApp, pool, __testUtils: { normalizeSchedulePayload } };
+module.exports = {
+  app,
+  initializeApp,
+  pool,
+  __testUtils: { normalizeSchedulePayload, normalizeStoredPermissionsForRole },
+};
 
 
 
