@@ -14,13 +14,10 @@
   const PERMISSION_KEYS = {
     menus: ["dashboard", "config", "schools", "users", "audios", "audit"],
     features: [
-      "dashboard_manual_section",
-      "dashboard_manual_play",
-      "dashboard_signal_audio",
-      "dashboard_last_signal",
-      "dashboard_next_signal",
-      "dashboard_schedule_interface",
-      "dashboard_database_status",
+      "dashboard_summary_view",
+      "dashboard_pending_items_view",
+      "dashboard_missing_audio_view",
+      "dashboard_recent_audit_view",
       "dashboard_open_alerts",
       "dashboard_schools_without_schedule",
       "dashboard_monitor_alerts",
@@ -33,13 +30,21 @@
       "config_templates",
       "config_backup_export",
       "config_backup_import",
+      "config_backup_preview",
+      "config_backup_refresh",
       "config_backup_restore",
       "audio_manage",
+      "schools_create",
+      "schools_edit",
+      "schools_disable",
+      "schools_copy_public_link",
       "users_create",
       "users_edit",
       "users_disable",
       "users_reset_password",
+      "users_simulate_login",
       "audit_view",
+      "audit_filters",
     ],
   };
   const ROLE_PERMISSION_DEFAULTS = {
@@ -53,13 +58,10 @@
         audit: true,
       },
       features: {
-        dashboard_manual_section: true,
-        dashboard_manual_play: false,
-        dashboard_signal_audio: true,
-        dashboard_last_signal: true,
-        dashboard_next_signal: true,
-        dashboard_schedule_interface: true,
-        dashboard_database_status: true,
+        dashboard_summary_view: true,
+        dashboard_pending_items_view: true,
+        dashboard_missing_audio_view: true,
+        dashboard_recent_audit_view: true,
         dashboard_open_alerts: true,
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
@@ -72,13 +74,21 @@
         config_templates: true,
         config_backup_export: true,
         config_backup_import: true,
+        config_backup_preview: true,
+        config_backup_refresh: true,
         config_backup_restore: true,
         audio_manage: true,
+        schools_create: true,
+        schools_edit: true,
+        schools_disable: true,
+        schools_copy_public_link: true,
         users_create: true,
         users_edit: true,
         users_disable: true,
         users_reset_password: true,
+        users_simulate_login: true,
         audit_view: true,
+        audit_filters: true,
       },
     },
     [ROLE_ADMIN_ESCOLA]: {
@@ -91,13 +101,10 @@
         audit: true,
       },
       features: {
-        dashboard_manual_section: true,
-        dashboard_manual_play: true,
-        dashboard_signal_audio: true,
-        dashboard_last_signal: true,
-        dashboard_next_signal: true,
-        dashboard_schedule_interface: true,
-        dashboard_database_status: true,
+        dashboard_summary_view: true,
+        dashboard_pending_items_view: true,
+        dashboard_missing_audio_view: true,
+        dashboard_recent_audit_view: true,
         dashboard_open_alerts: true,
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
@@ -110,13 +117,21 @@
         config_templates: true,
         config_backup_export: true,
         config_backup_import: true,
+        config_backup_preview: true,
+        config_backup_refresh: true,
         config_backup_restore: true,
         audio_manage: true,
+        schools_create: false,
+        schools_edit: false,
+        schools_disable: false,
+        schools_copy_public_link: false,
         users_create: true,
         users_edit: true,
         users_disable: true,
         users_reset_password: false,
+        users_simulate_login: false,
         audit_view: true,
+        audit_filters: false,
       },
     },
     [ROLE_SOMENTE_LEITURA]: {
@@ -129,13 +144,10 @@
         audit: true,
       },
       features: {
-        dashboard_manual_section: true,
-        dashboard_manual_play: true,
-        dashboard_signal_audio: true,
-        dashboard_last_signal: true,
-        dashboard_next_signal: true,
-        dashboard_schedule_interface: true,
-        dashboard_database_status: true,
+        dashboard_summary_view: true,
+        dashboard_pending_items_view: true,
+        dashboard_missing_audio_view: true,
+        dashboard_recent_audit_view: true,
         dashboard_open_alerts: true,
         dashboard_schools_without_schedule: true,
         dashboard_monitor_alerts: true,
@@ -148,13 +160,21 @@
         config_templates: false,
         config_backup_export: true,
         config_backup_import: false,
+        config_backup_preview: true,
+        config_backup_refresh: true,
         config_backup_restore: false,
         audio_manage: false,
+        schools_create: false,
+        schools_edit: false,
+        schools_disable: false,
+        schools_copy_public_link: false,
         users_create: false,
         users_edit: false,
         users_disable: false,
         users_reset_password: false,
+        users_simulate_login: false,
         audit_view: true,
+        audit_filters: false,
       },
     },
   };
@@ -168,13 +188,10 @@
       audit: "Menu Auditoria",
     },
     features: {
-      dashboard_manual_section: "Dashboard: visualizar acionamento manual",
-      dashboard_manual_play: "Dashboard: tocar audio manual",
-      dashboard_signal_audio: "Dashboard: reproduzir audio dos sinais",
-      dashboard_last_signal: "Dashboard: visualizar ultimo sinal",
-      dashboard_next_signal: "Dashboard: visualizar proximo sinal",
-      dashboard_schedule_interface: "Dashboard: visualizar interface de horarios",
-      dashboard_database_status: "Dashboard: status do banco de dados",
+      dashboard_summary_view: "Dashboard: cards de resumo",
+      dashboard_pending_items_view: "Dashboard: pendencias operacionais",
+      dashboard_missing_audio_view: "Dashboard: sinais sem audio",
+      dashboard_recent_audit_view: "Dashboard: auditoria recente",
       dashboard_open_alerts: "Dashboard: total de alertas",
       dashboard_schools_without_schedule: "Dashboard: escolas sem horario",
       dashboard_monitor_alerts: "Dashboard: lista de alertas de monitoramento",
@@ -187,26 +204,31 @@
       config_templates: "Config: templates",
       config_backup_export: "Config: exportar backup",
       config_backup_import: "Config: importar backup",
+      config_backup_preview: "Config: preview de backup",
+      config_backup_refresh: "Config: atualizar lista de backups",
       config_backup_restore: "Config: restaurar backups",
       audio_manage: "Audios: gerenciar musicas",
+      schools_create: "Escolas: criar",
+      schools_edit: "Escolas: editar",
+      schools_disable: "Escolas: desativar",
+      schools_copy_public_link: "Escolas: copiar link publico",
       users_create: "Usuarios: criar",
       users_edit: "Usuarios: editar",
       users_disable: "Usuarios: desativar",
       users_reset_password: "Usuarios: resetar senha",
+      users_simulate_login: "Usuarios: simular login",
       audit_view: "Auditoria: visualizar logs",
+      audit_filters: "Auditoria: usar filtros e paginacao",
     },
   };
   const PERMISSION_MENU_GROUPS = [
     {
       menu: "dashboard",
       features: [
-        "dashboard_manual_section",
-        "dashboard_manual_play",
-        "dashboard_signal_audio",
-        "dashboard_last_signal",
-        "dashboard_next_signal",
-        "dashboard_schedule_interface",
-        "dashboard_database_status",
+        "dashboard_summary_view",
+        "dashboard_pending_items_view",
+        "dashboard_missing_audio_view",
+        "dashboard_recent_audit_view",
         "dashboard_open_alerts",
         "dashboard_schools_without_schedule",
         "dashboard_monitor_alerts",
@@ -224,16 +246,27 @@
         "config_templates",
         "config_backup_export",
         "config_backup_import",
+        "config_backup_preview",
+        "config_backup_refresh",
         "config_backup_restore",
       ],
     },
-    { menu: "schools", features: [] },
+    {
+      menu: "schools",
+      features: ["schools_create", "schools_edit", "schools_disable", "schools_copy_public_link"],
+    },
     {
       menu: "users",
-      features: ["users_create", "users_edit", "users_disable", "users_reset_password"],
+      features: [
+        "users_create",
+        "users_edit",
+        "users_disable",
+        "users_reset_password",
+        "users_simulate_login",
+      ],
     },
     { menu: "audios", features: ["audio_manage"] },
-    { menu: "audit", features: ["audit_view"] },
+    { menu: "audit", features: ["audit_view", "audit_filters"] },
   ];
   const USER_PERMISSION_PRESETS = {
     sinais: {
@@ -248,13 +281,10 @@
           audit: false,
         },
         features: {
-          dashboard_manual_section: true,
-          dashboard_manual_play: true,
-          dashboard_signal_audio: true,
-          dashboard_last_signal: true,
-          dashboard_next_signal: true,
-          dashboard_schedule_interface: true,
-          dashboard_database_status: false,
+          dashboard_summary_view: true,
+          dashboard_pending_items_view: false,
+          dashboard_missing_audio_view: false,
+          dashboard_recent_audit_view: false,
           dashboard_open_alerts: false,
           dashboard_schools_without_schedule: false,
           dashboard_monitor_alerts: false,
@@ -267,12 +297,20 @@
           config_templates: false,
           config_backup_export: false,
           config_backup_import: false,
+          config_backup_preview: false,
+          config_backup_refresh: false,
           config_backup_restore: false,
+          schools_create: false,
+          schools_edit: false,
+          schools_disable: false,
+          schools_copy_public_link: false,
           users_create: false,
           users_edit: false,
           users_disable: false,
           users_reset_password: false,
+          users_simulate_login: false,
           audit_view: false,
+          audit_filters: false,
         },
       },
     },
@@ -288,13 +326,10 @@
           audit: true,
         },
         features: {
-          dashboard_manual_section: true,
-          dashboard_manual_play: true,
-          dashboard_signal_audio: true,
-          dashboard_last_signal: true,
-          dashboard_next_signal: true,
-          dashboard_schedule_interface: true,
-          dashboard_database_status: true,
+          dashboard_summary_view: true,
+          dashboard_pending_items_view: true,
+          dashboard_missing_audio_view: true,
+          dashboard_recent_audit_view: true,
           dashboard_open_alerts: true,
           dashboard_schools_without_schedule: true,
           dashboard_monitor_alerts: true,
@@ -307,12 +342,20 @@
           config_templates: true,
           config_backup_export: true,
           config_backup_import: true,
+          config_backup_preview: true,
+          config_backup_refresh: true,
           config_backup_restore: true,
+          schools_create: false,
+          schools_edit: false,
+          schools_disable: false,
+          schools_copy_public_link: false,
           users_create: true,
           users_edit: true,
           users_disable: true,
           users_reset_password: false,
+          users_simulate_login: false,
           audit_view: true,
+          audit_filters: true,
         },
       },
     },
@@ -328,13 +371,10 @@
           audit: true,
         },
         features: {
-          dashboard_manual_section: true,
-          dashboard_manual_play: true,
-          dashboard_signal_audio: true,
-          dashboard_last_signal: true,
-          dashboard_next_signal: true,
-          dashboard_schedule_interface: true,
-          dashboard_database_status: true,
+          dashboard_summary_view: true,
+          dashboard_pending_items_view: true,
+          dashboard_missing_audio_view: true,
+          dashboard_recent_audit_view: true,
           dashboard_open_alerts: true,
           dashboard_schools_without_schedule: true,
           dashboard_monitor_alerts: true,
@@ -347,12 +387,20 @@
           config_templates: true,
           config_backup_export: true,
           config_backup_import: true,
+          config_backup_preview: true,
+          config_backup_refresh: true,
           config_backup_restore: true,
+          schools_create: true,
+          schools_edit: true,
+          schools_disable: true,
+          schools_copy_public_link: true,
           users_create: true,
           users_edit: true,
           users_disable: true,
           users_reset_password: true,
+          users_simulate_login: true,
           audit_view: true,
+          audit_filters: true,
         },
       },
     },
@@ -382,6 +430,7 @@
   const dashboardLastSignalCard = document.getElementById("dashboardLastSignalCard");
   const dashboardNextSignalCard = document.getElementById("dashboardNextSignalCard");
   const dashboardScheduleSectionCard = document.getElementById("dashboardScheduleSectionCard");
+  const dashboardSummaryCards = document.getElementById("dashboardSummaryCards");
   const dashboardDatabaseCard = document.getElementById("dashboardDatabaseCard");
   const dashboardOpenAlertsCard = document.getElementById("dashboardOpenAlertsCard");
   const dashboardSchoolsWithoutScheduleCard = document.getElementById("dashboardSchoolsWithoutScheduleCard");
@@ -390,6 +439,31 @@
   const dashboardDbLatency = document.getElementById("dashboardDbLatency");
   const dashboardOpenAlerts = document.getElementById("dashboardOpenAlerts");
   const dashboardSchoolsWithoutSchedule = document.getElementById("dashboardSchoolsWithoutSchedule");
+  const dashboardActiveSchools = document.getElementById("dashboardActiveSchools");
+  const dashboardSchoolsWithoutScheduleText = document.getElementById(
+    "dashboardSchoolsWithoutScheduleText"
+  );
+  const dashboardUsersCount = document.getElementById("dashboardUsersCount");
+  const dashboardAdminsCount = document.getElementById("dashboardAdminsCount");
+  const dashboardAudioCount = document.getElementById("dashboardAudioCount");
+  const dashboardAudioUsage = document.getElementById("dashboardAudioUsage");
+  const dashboardApprovalsCount = document.getElementById("dashboardApprovalsCount");
+  const dashboardPendingSchoolsLabel = document.getElementById("dashboardPendingSchoolsLabel");
+  const dashboardMissingAudioLabel = document.getElementById("dashboardMissingAudioLabel");
+  const dashboardMissingAudioCard = document.getElementById("dashboardMissingAudioCard");
+  const dashboardPendingApprovalsLabel = document.getElementById(
+    "dashboardPendingApprovalsLabel"
+  );
+  const dashboardRecentAlertsLabel = document.getElementById("dashboardRecentAlertsLabel");
+  const dashboardHttpTopEndpointDisplay = document.getElementById(
+    "dashboardHttpTopEndpointDisplay"
+  );
+  const dashboardHttpTotalRequestsDisplay = document.getElementById(
+    "dashboardHttpTotalRequestsDisplay"
+  );
+  const dashboardHttpLastSeenDisplay = document.getElementById("dashboardHttpLastSeenDisplay");
+  const dashboardHttpBars = document.getElementById("dashboardHttpBars");
+  const dashboardRecentAuditList = document.getElementById("dashboardRecentAuditList");
   const dashboardMonitorCheckedAt = document.getElementById("dashboardMonitorCheckedAt");
   const dashboardAlertList = document.getElementById("dashboardAlertList");
   const refreshDashboardMonitorBtn = document.getElementById("refreshDashboardMonitorBtn");
@@ -536,12 +610,13 @@
   const confirmPasswordInput = document.getElementById("confirmPasswordInput");
   const cancelChangePasswordBtn = document.getElementById("cancelChangePasswordBtn");
 
-  const navActiveClasses = ["bg-slate-900", "text-white", "shadow-soft", "dark:bg-slate-800"];
+  const navActiveClasses = ["bg-slate-950", "px-4", "py-3", "text-white", "dark:bg-slate-800"];
   const navInactiveClasses = [
+    "px-2",
+    "py-1",
     "text-slate-700",
     "dark:text-slate-200",
-    "hover:bg-slate-100",
-    "dark:hover:bg-slate-800",
+    "hover:text-slate-950",
   ];
 
   const periods = {
@@ -694,6 +769,11 @@
   }
 
   async function copySchoolPublicSignalLink(school) {
+    if (!canCopySchoolPublicLink()) {
+      alert("Sem permissao para copiar link publico.");
+      return;
+    }
+
     const url = getSchoolPublicSignalUrl(school);
     if (!url) {
       alert("Esta escola ainda nao possui link publico. Recarregue a pagina apos a migracao do banco.");
@@ -737,7 +817,8 @@
       hasPermission("features.users_create") ||
       hasPermission("features.users_edit") ||
       hasPermission("features.users_disable") ||
-      hasPermission("features.users_reset_password")
+      hasPermission("features.users_reset_password") ||
+      hasPermission("features.users_simulate_login")
     );
   }
 
@@ -774,36 +855,36 @@
     return canAccessAudiosMenu() && hasPermission("features.audio_manage");
   }
 
-  function canViewDashboardManualSection() {
-    return canAccessDashboardMenu() && hasPermission("features.dashboard_manual_section");
+  function canCreateSchools() {
+    return canAccessSchoolsMenu() && hasPermission("features.schools_create");
   }
 
-  function canUseDashboardSignalAudio() {
-    return canAccessDashboardMenu() && hasPermission("features.dashboard_signal_audio");
+  function canEditSchools() {
+    return canAccessSchoolsMenu() && hasPermission("features.schools_edit");
   }
 
-  function canPlayDashboardManualAudio() {
-    return (
-      canViewDashboardManualSection() &&
-      canUseDashboardSignalAudio() &&
-      hasPermission("features.dashboard_manual_play")
-    );
+  function canDisableSchools() {
+    return canAccessSchoolsMenu() && hasPermission("features.schools_disable");
   }
 
-  function canViewDashboardLastSignal() {
-    return canAccessDashboardMenu() && hasPermission("features.dashboard_last_signal");
+  function canCopySchoolPublicLink() {
+    return canAccessSchoolsMenu() && hasPermission("features.schools_copy_public_link");
   }
 
-  function canViewDashboardNextSignal() {
-    return canAccessDashboardMenu() && hasPermission("features.dashboard_next_signal");
+  function canViewDashboardSummary() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_summary_view");
   }
 
-  function canViewDashboardScheduleInterface() {
-    return canAccessDashboardMenu() && hasPermission("features.dashboard_schedule_interface");
+  function canViewDashboardPendingItems() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_pending_items_view");
   }
 
-  function canViewDashboardDatabaseStatus() {
-    return canAccessDashboardMenu() && hasPermission("features.dashboard_database_status");
+  function canViewDashboardMissingAudio() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_missing_audio_view");
+  }
+
+  function canViewDashboardRecentAudit() {
+    return canAccessDashboardMenu() && hasPermission("features.dashboard_recent_audit_view");
   }
 
   function canViewDashboardOpenAlerts() {
@@ -842,8 +923,24 @@
     return canAccessConfigMenu() && !isSimulationActive() && hasPermission("features.config_backup_import");
   }
 
+  function canPreviewBackups() {
+    return canAccessConfigMenu() && hasPermission("features.config_backup_preview");
+  }
+
+  function canRefreshBackups() {
+    return canAccessConfigMenu() && hasPermission("features.config_backup_refresh");
+  }
+
   function canRestoreBackups() {
     return canAccessConfigMenu() && !isSimulationActive() && hasPermission("features.config_backup_restore");
+  }
+
+  function canUseAuditFilters() {
+    return canViewAuditLogs() && hasPermission("features.audit_filters");
+  }
+
+  function canSimulateUsers() {
+    return canManageUsers() && isSuperAdmin() && !isSimulationActive() && hasPermission("features.users_simulate_login");
   }
 
   function buildEmptyPermissions() {
@@ -1236,13 +1333,18 @@
 
   function setNavState(el, isActive) {
     if (!el) return;
+    const marker = el.querySelector("[data-nav-marker]");
 
     if (isActive) {
       el.classList.add(...navActiveClasses);
       el.classList.remove(...navInactiveClasses);
+      marker?.classList.remove("bg-slate-300");
+      marker?.classList.add("bg-cyan-400");
     } else {
       el.classList.remove(...navActiveClasses);
       el.classList.add(...navInactiveClasses);
+      marker?.classList.remove("bg-cyan-400");
+      marker?.classList.add("bg-slate-300");
     }
   }
 
@@ -1252,6 +1354,71 @@
 
   function getActiveSchools() {
     return schools.filter((school) => school.active !== false);
+  }
+
+  function updateDashboardSummaryCards() {
+    const activeSchools = getActiveSchools();
+    if (dashboardActiveSchools) dashboardActiveSchools.textContent = String(activeSchools.length || "--");
+
+    const withoutScheduleRaw = Number.parseInt(
+      String(dashboardSchoolsWithoutSchedule?.textContent || ""),
+      10
+    );
+    const withoutScheduleText = Number.isFinite(withoutScheduleRaw)
+      ? withoutScheduleRaw
+      : "--";
+    if (dashboardSchoolsWithoutScheduleText) {
+      dashboardSchoolsWithoutScheduleText.textContent = `${withoutScheduleText} sem horario publicado`;
+    }
+
+    if (dashboardUsersCount) dashboardUsersCount.textContent = users.length ? String(users.length) : "--";
+    if (dashboardAdminsCount) {
+      const admins = users.filter((user) => ["superadmin", "admin"].includes(String(user.role || "")));
+      dashboardAdminsCount.textContent = `${admins.length || "--"} administradores`;
+    }
+
+    if (dashboardAudioCount) dashboardAudioCount.textContent = audioTracks.length ? String(audioTracks.length) : "--";
+    if (dashboardAudioUsage) {
+      const percent =
+        Number.isFinite(audioStorageStats?.usagePercent)
+          ? `${Math.round(audioStorageStats.usagePercent)}%`
+          : Number.isFinite(audioStorageStats?.percentUsed)
+            ? `${Math.round(audioStorageStats.percentUsed)}%`
+            : "--";
+      dashboardAudioUsage.textContent = `${percent} do limite usado`;
+    }
+  }
+
+  async function updateDashboardMissingAudioCount() {
+    if (!dashboardMissingAudioLabel) return;
+    const visibleSchools = isSuperAdmin()
+      ? getActiveSchools()
+      : getActiveSchools().filter((school) => String(school.id) === String(currentUser?.schoolId || ""));
+    if (!visibleSchools.length) {
+      dashboardMissingAudioLabel.textContent = "0 sinais sem áudio";
+      return;
+    }
+
+    try {
+      const schedules = await Promise.all(
+        visibleSchools.slice(0, 25).map((school) =>
+          fetchScheduleBySchoolId(school.id).catch(() => null)
+        )
+      );
+      const missingCount = schedules.reduce((total, schedule) => {
+        if (!schedule) return total;
+        return (
+          total +
+          ["morning", "afternoon", "afternoonFriday"].reduce((sum, period) => {
+            const signals = Array.isArray(schedule?.[period]) ? schedule[period] : [];
+            return sum + signals.filter((signal) => !signal?.music).length;
+          }, 0)
+        );
+      }, 0);
+      dashboardMissingAudioLabel.textContent = `${missingCount} sinais sem áudio`;
+    } catch (_error) {
+      dashboardMissingAudioLabel.textContent = "0 sinais sem áudio";
+    }
   }
 
   async function setCurrentSchoolId(nextSchoolId, options = {}) {
@@ -1306,6 +1473,20 @@
     }
   }
 
+  function loadDashboardSummaryData() {
+    updateDashboardSummaryCards();
+    updateDashboardMissingAudioCount();
+    if (canManageUsers() && !tabCache.users.promise && !users.length) {
+      loadUsers();
+    }
+    if (canAccessAudiosMenu() && !tabCache.audios.promise && !audioTracks.length) {
+      loadAudioTracks();
+    }
+    if (canViewAuditLogs() && !tabCache.audit.promise && !auditLogs.length) {
+      loadAuditLogs();
+    }
+  }
+
   function switchSection(target) {
     if (target === "dashboard" && !canAccessDashboardMenu()) target = "config";
     if (target === "config" && !canAccessConfigMenu()) target = "dashboard";
@@ -1347,7 +1528,10 @@
     setNavState(navAudios, showAudios);
     setNavState(navAudits, showAudit);
 
-    if (showDashboard) setPageTitle("Sinais");
+    if (showDashboard) {
+      setPageTitle("Sinais");
+      loadDashboardSummaryData();
+    }
     if (showConfig) {
       setPageTitle("Configuracoes");
       if (!configLoaded) loadConfigSchedule();
@@ -1379,6 +1563,21 @@
     closeSidebarOnMobile();
   }
 
+  function bindDashboardShortcutCards() {
+    document.getElementById("dashboardPendingSchoolsCard")?.addEventListener("click", () => {
+      switchSection("schools");
+    });
+    document.getElementById("dashboardMissingAudioCard")?.addEventListener("click", () => {
+      switchSection("config");
+    });
+    document.getElementById("dashboardApprovalsCard")?.addEventListener("click", () => {
+      switchSection("config");
+    });
+    document.getElementById("dashboardRecentAlertsCard")?.addEventListener("click", () => {
+      switchSection("audit");
+    });
+  }
+
   function applyPermissions() {
     if (navDashboard) {
       navDashboard.classList.toggle("hidden", !canAccessDashboardMenu());
@@ -1399,43 +1598,46 @@
       navAudits.classList.toggle("hidden", !canViewAuditLogs());
     }
     if (dashboardManualCard) {
-      dashboardManualCard.classList.toggle("hidden", !canViewDashboardManualSection());
+      dashboardManualCard.classList.add("hidden");
     }
     if (dashboardLastSignalCard) {
-      dashboardLastSignalCard.classList.toggle("hidden", !canViewDashboardLastSignal());
+      dashboardLastSignalCard.classList.add("hidden");
     }
     if (dashboardNextSignalCard) {
-      dashboardNextSignalCard.classList.toggle("hidden", !canViewDashboardNextSignal());
+      dashboardNextSignalCard.classList.add("hidden");
     }
     if (dashboardScheduleSectionCard) {
-      dashboardScheduleSectionCard.classList.toggle("hidden", !canViewDashboardScheduleInterface());
+      dashboardScheduleSectionCard.classList.add("hidden");
     }
     if (dashboardDatabaseCard) {
-      dashboardDatabaseCard.classList.toggle("hidden", !canViewDashboardDatabaseStatus());
+      dashboardDatabaseCard.classList.add("hidden");
     }
     if (dashboardOpenAlertsCard) {
-      dashboardOpenAlertsCard.classList.toggle("hidden", !canViewDashboardOpenAlerts());
+      dashboardOpenAlertsCard.classList.add("hidden");
     }
     if (dashboardSchoolsWithoutScheduleCard) {
-      dashboardSchoolsWithoutScheduleCard.classList.toggle(
-        "hidden",
-        !canViewDashboardSchoolsWithoutSchedule()
-      );
+      dashboardSchoolsWithoutScheduleCard.classList.add("hidden");
+    }
+    if (dashboardSummaryCards) {
+      dashboardSummaryCards.classList.toggle("hidden", !canViewDashboardSummary());
     }
     if (dashboardMonitorAlertsCard) {
-      dashboardMonitorAlertsCard.classList.toggle("hidden", !canViewDashboardMonitorAlerts());
+      dashboardMonitorAlertsCard.classList.toggle("hidden", !canViewDashboardPendingItems());
+    }
+    if (dashboardMissingAudioCard) {
+      dashboardMissingAudioCard.classList.toggle("hidden", !canViewDashboardMissingAudio());
     }
     if (dashboardOperationalHistoryCard) {
-      dashboardOperationalHistoryCard.classList.toggle("hidden", !canViewDashboardOperationalHistory());
+      dashboardOperationalHistoryCard.classList.toggle("hidden", !canViewDashboardRecentAudit());
     }
     if (dashboardHttpMetricsCard) {
       dashboardHttpMetricsCard.classList.toggle("hidden", !canViewDashboardHttpMetrics());
     }
 
     if (schoolBtn) {
-      schoolBtn.disabled = !canAccessSchoolsMenu();
-      schoolBtn.classList.toggle("opacity-50", !canAccessSchoolsMenu());
-      schoolBtn.classList.toggle("cursor-not-allowed", !canAccessSchoolsMenu());
+      schoolBtn.disabled = !canCreateSchools();
+      schoolBtn.classList.toggle("opacity-50", !canCreateSchools());
+      schoolBtn.classList.toggle("cursor-not-allowed", !canCreateSchools());
     }
     if (userBtn) {
       userBtn.disabled = !canCreateUsers();
@@ -1443,10 +1645,8 @@
       userBtn.classList.toggle("cursor-not-allowed", !canCreateUsers());
     }
     if (dashboardManualPlayBtn) {
-      const canPlayAudio = canPlayDashboardManualAudio() && getAllAudioTracks().length > 0;
-      dashboardManualPlayBtn.disabled = !canPlayAudio;
-      dashboardManualPlayBtn.classList.toggle("opacity-50", !canPlayAudio);
-      dashboardManualPlayBtn.classList.toggle("cursor-not-allowed", !canPlayAudio);
+      dashboardManualPlayBtn.disabled = true;
+      dashboardManualPlayBtn.classList.add("opacity-50", "cursor-not-allowed");
     }
 
     const disableWrite = !canWrite();
@@ -1460,8 +1660,8 @@
     if (exportBackupBtn) exportBackupBtn.disabled = !canExportBackup();
     if (importBackupInput) importBackupInput.disabled = !canImportBackup();
     if (restoreBackupBtn) restoreBackupBtn.disabled = !canRestoreBackups();
-    if (previewBackupBtn) previewBackupBtn.disabled = !canExportBackup();
-    if (refreshBackupsBtn) refreshBackupsBtn.disabled = !canExportBackup();
+    if (previewBackupBtn) previewBackupBtn.disabled = !canPreviewBackups();
+    if (refreshBackupsBtn) refreshBackupsBtn.disabled = !canRefreshBackups();
     if (scheduleApprovalSection) {
       scheduleApprovalSection.classList.toggle("hidden", !canAccessConfigMenu());
     }
@@ -1486,6 +1686,18 @@
     if (dashboardHttpTopNFilter) {
       dashboardHttpTopNFilter.disabled = !canFilterDashboardHttpMetrics();
     }
+    [
+      auditSchoolFilter,
+      auditUserFilter,
+      auditActionFilter,
+      auditFromDate,
+      auditToDate,
+      auditApplyFiltersBtn,
+      auditPrevPageBtn,
+      auditNextPageBtn,
+    ].forEach((control) => {
+      if (control) control.disabled = !canUseAuditFilters();
+    });
 
     const isDashboardActive = Boolean(dashboardSection && !dashboardSection.classList.contains("hidden"));
     applySuperadminDashboardHeaderVisibility(isDashboardActive);
@@ -1586,8 +1798,8 @@
   }
 
   function openNewSchoolModal() {
-    if (!canAccessSchoolsMenu()) {
-      alert("Apenas superadmin pode gerenciar escolas.");
+    if (!canCreateSchools()) {
+      alert("Sem permissao para criar escolas.");
       return;
     }
     if (!schoolForm) return;
@@ -1601,7 +1813,7 @@
   }
 
   function openEditSchoolModal(school) {
-    if (!canAccessSchoolsMenu()) return;
+    if (!canEditSchools()) return;
     if (!schoolForm) return;
 
     if (schoolEditId) schoolEditId.value = String(school.id);
@@ -1718,6 +1930,9 @@
 
     schools.forEach((school) => {
       const tr = document.createElement("tr");
+      const canEdit = canEditSchools();
+      const canDisable = canDisableSchools();
+      const canCopyLink = canCopySchoolPublicLink();
       tr.innerHTML = `
         <td class="px-4 py-3 font-medium">${escapeHtml(school.name || "-")}</td>
         <td class="px-4 py-3">${escapeHtml(school.slug || "-")}</td>
@@ -1736,13 +1951,13 @@
             <button type="button" data-action="redirect" class="text-emerald-600 transition hover:text-emerald-800" title="Abrir configuracoes da escola">
               <i class="fas fa-arrow-right"></i>
             </button>
-            <button type="button" data-action="copy-public-link" class="text-slate-600 transition hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" title="Copiar link publico dos sinais">
+            <button type="button" data-action="copy-public-link" class="${canCopyLink ? "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" : "cursor-not-allowed text-slate-300"} transition" title="Copiar link publico dos sinais" ${canCopyLink ? "" : "disabled"}>
               <i class="fas fa-link"></i>
             </button>
-            <button type="button" data-action="edit" class="text-blue-600 transition hover:text-blue-800" title="Editar">
+            <button type="button" data-action="edit" class="${canEdit ? "text-blue-600 hover:text-blue-800" : "cursor-not-allowed text-slate-300"} transition" title="Editar" ${canEdit ? "" : "disabled"}>
               <i class="fas fa-pen"></i>
             </button>
-            <button type="button" data-action="delete" class="text-red-600 transition hover:text-red-800" title="Excluir">
+            <button type="button" data-action="delete" class="${canDisable ? "text-red-600 hover:text-red-800" : "cursor-not-allowed text-slate-300"} transition" title="Excluir" ${canDisable ? "" : "disabled"}>
               <i class="fas fa-trash"></i>
             </button>
           </div>
@@ -1754,14 +1969,17 @@
       });
 
       tr.querySelector('[data-action="copy-public-link"]')?.addEventListener("click", () => {
+        if (!canCopyLink) return;
         copySchoolPublicSignalLink(school);
       });
 
       tr.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+        if (!canEdit) return;
         openEditSchoolModal(school);
       });
 
       tr.querySelector('[data-action="delete"]')?.addEventListener("click", () => {
+        if (!canDisable) return;
         deleteSchool(school);
       });
 
@@ -1793,6 +2011,8 @@
 
       await syncSchoolSelectors();
       renderSchoolsTable();
+      updateDashboardSummaryCards();
+      updateDashboardMissingAudioCount();
       buildAuditSchoolFilter();
       markTabCacheLoaded("schools");
     })();
@@ -2220,6 +2440,7 @@
       refreshAudioSelects();
       renderAudioStorageUsage();
       renderAudioTracksTable();
+      updateDashboardSummaryCards();
       window.audioTracks = audioTracks
         .filter((track) => track?.active !== false && track?.publicUrl)
         .map((track) => ({
@@ -2453,13 +2674,18 @@
 
   async function saveSchool(event) {
     event.preventDefault();
-    if (!canAccessSchoolsMenu()) {
-      alert("Apenas superadmin pode gerenciar escolas.");
-      return;
-    }
     if (!schoolNameInput || !schoolTimezoneInput || !schoolActiveInput) return;
 
     const editId = schoolEditId?.value || "";
+    if (editId && !canEditSchools()) {
+      alert("Sem permissao para editar escolas.");
+      return;
+    }
+    if (!editId && !canCreateSchools()) {
+      alert("Sem permissao para criar escolas.");
+      return;
+    }
+
     const payload = {
       name: schoolNameInput.value.trim(),
       timezone: schoolTimezoneInput.value.trim() || "America/Sao_Paulo",
@@ -2500,7 +2726,7 @@
   }
 
   async function deleteSchool(school) {
-    if (!canAccessSchoolsMenu()) return;
+    if (!canDisableSchools()) return;
     if (!school?.id) return;
     if (!(await confirmAction(`Excluir a escola "${school.name}"? Ela ficara inativa.`, {
       title: "Excluir escola",
@@ -3087,7 +3313,7 @@
         isSuperAdmin() &&
         !isSelf &&
         !simulationWriteLocked;
-      const canSimulate = canManage && isSuperAdmin() && !isSelf && !isSimulationActive();
+      const canSimulate = canManage && canSimulateUsers() && !isSelf;
       const deactivateLabel = user.active === false ? "Reativar" : "Desativar";
       const deactivateIcon = user.active === false ? "fa-user-check" : "fa-user-slash";
 
@@ -3184,6 +3410,7 @@
       users = Array.isArray(data) ? data : [];
       users.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
       renderUsersTable();
+      updateDashboardSummaryCards();
       buildAuditUserFilter();
       markTabCacheLoaded("users");
     })();
@@ -3386,8 +3613,8 @@
   }
 
   async function simulateUserAccess(user) {
-    if (!isSuperAdmin() || !user?.id) {
-      alert("Somente superadmin pode simular acessos.");
+    if (!canSimulateUsers() || !user?.id) {
+      alert("Sem permissao para simular login.");
       return;
     }
     if (!user.active) {
@@ -3482,7 +3709,7 @@
         backupSnapshotSelect.appendChild(option);
       });
       backupSnapshotSelect.disabled = backupSnapshots.length === 0;
-      if (previewBackupBtn) previewBackupBtn.disabled = backupSnapshots.length === 0;
+      if (previewBackupBtn) previewBackupBtn.disabled = backupSnapshots.length === 0 || !canPreviewBackups();
       if (restoreBackupBtn) restoreBackupBtn.disabled = backupSnapshots.length === 0 || !canWrite();
     } catch (error) {
       console.error("Erro ao carregar backups automaticos:", error);
@@ -3498,6 +3725,11 @@
   }
 
   async function previewSelectedBackup() {
+    if (!canPreviewBackups()) {
+      alert("Sem permissao para visualizar preview de backup.");
+      return;
+    }
+
     const schoolId = getCurrentSchoolId();
     const backupId = getSelectedBackupId();
     if (!schoolId || !backupId) {
@@ -3639,6 +3871,7 @@
   function renderAuditTable() {
     if (!auditTableBody) return;
     updateAuditPaginationControls();
+    renderDashboardRecentAudit();
 
     if (!canViewAuditLogs()) {
       auditTableBody.innerHTML = `
@@ -3659,7 +3892,7 @@
     }
 
     auditTableBody.innerHTML = "";
-    auditLogs.forEach((log) => {
+      auditLogs.forEach((log) => {
       const tr = document.createElement("tr");
       const whenText = log.createdAt ? new Date(log.createdAt).toLocaleString("pt-BR") : "-";
       const detailParts = [];
@@ -3681,15 +3914,73 @@
     });
   }
 
+  function formatAuditActionLabel(action = "", resource = "") {
+    const value = String(action || "").toLowerCase();
+    if (value.includes("backup")) return "Backup consultado";
+    if (value.includes("login")) return "Login realizado";
+    if (value.includes("logout")) return "Logout realizado";
+    if (value.includes("audio")) return value.includes("delete") ? "Áudio removido" : "Áudio atualizado";
+    if (value.includes("user") || value.includes("permission") || value.includes("permiss")) {
+      return "Permissão atualizada";
+    }
+    if (value.includes("school") && (value.includes("delete") || value.includes("disable"))) {
+      return "Escola desativada";
+    }
+    if (value.includes("school")) return "Escola atualizada";
+    if (value.includes("schedule") || String(resource || "").toLowerCase().includes("schedule")) {
+      return "Usuário alterou horário";
+    }
+    return action ? String(action).replaceAll("_", " ") : "Alteração registrada";
+  }
+
+  function renderDashboardRecentAudit() {
+    if (!dashboardRecentAuditList) return;
+    if (!auditLogs.length) {
+      dashboardRecentAuditList.innerHTML = `
+        <div class="rounded-xl bg-slate-50 px-5 py-4 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+          Nenhum log recente encontrado.
+        </div>
+      `;
+      return;
+    }
+
+    dashboardRecentAuditList.innerHTML = auditLogs
+      .slice(0, 4)
+      .map((log) => {
+        const label = formatAuditActionLabel(log.action, log.resource);
+        const when = log.createdAt ? new Date(log.createdAt).toLocaleString("pt-BR") : "--";
+        const actor = log.userName || log.userEmail || log.userId || "Sistema";
+        const scope = log.schoolName || log.schoolId || "Global";
+        const resource = [log.resource, log.resourceId ? `#${log.resourceId}` : ""]
+          .filter(Boolean)
+          .join(" ");
+        return `
+          <article class="rounded-xl bg-slate-50 px-5 py-4 dark:bg-slate-800">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-extrabold text-slate-700 dark:text-slate-100">${escapeHtml(label)}</p>
+                <p class="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">${escapeHtml(actor)} | ${escapeHtml(scope)}</p>
+              </div>
+              <span class="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-900 dark:text-slate-400">${escapeHtml(when)}</span>
+            </div>
+            <p class="mt-2 truncate text-xs font-semibold text-slate-400 dark:text-slate-500">${escapeHtml(resource || log.action || "-")}</p>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
   function getAuditCacheKey(offset = auditOffset) {
     const params = new URLSearchParams();
     params.set("limit", String(AUDIT_PAGE_SIZE));
     params.set("offset", String(offset));
-    if (auditSchoolFilter?.value) params.set("schoolId", auditSchoolFilter.value);
-    if (auditUserFilter?.value) params.set("userId", auditUserFilter.value);
-    if (auditActionFilter?.value?.trim()) params.set("action", auditActionFilter.value.trim());
-    if (auditFromDate?.value) params.set("from", auditFromDate.value);
-    if (auditToDate?.value) params.set("to", auditToDate.value);
+    if (canUseAuditFilters()) {
+      if (auditSchoolFilter?.value) params.set("schoolId", auditSchoolFilter.value);
+      if (auditUserFilter?.value) params.set("userId", auditUserFilter.value);
+      if (auditActionFilter?.value?.trim()) params.set("action", auditActionFilter.value.trim());
+      if (auditFromDate?.value) params.set("from", auditFromDate.value);
+      if (auditToDate?.value) params.set("to", auditToDate.value);
+    }
     return params.toString();
   }
 
@@ -3702,8 +3993,8 @@
         ? `Pagina ${page} | ${from}-${to} de ${auditTotal}`
         : "Pagina 1 | 0 registros";
     }
-    if (auditPrevPageBtn) auditPrevPageBtn.disabled = auditOffset <= 0;
-    if (auditNextPageBtn) auditNextPageBtn.disabled = !auditHasMore;
+    if (auditPrevPageBtn) auditPrevPageBtn.disabled = auditOffset <= 0 || !canUseAuditFilters();
+    if (auditNextPageBtn) auditNextPageBtn.disabled = !auditHasMore || !canUseAuditFilters();
   }
 
   async function loadAuditLogs(options = {}) {
@@ -3723,11 +4014,13 @@
     const params = new URLSearchParams();
     params.set("limit", String(AUDIT_PAGE_SIZE));
     params.set("offset", String(nextOffset));
-    if (auditSchoolFilter?.value) params.set("schoolId", auditSchoolFilter.value);
-    if (auditUserFilter?.value) params.set("userId", auditUserFilter.value);
-    if (auditActionFilter?.value?.trim()) params.set("action", auditActionFilter.value.trim());
-    if (auditFromDate?.value) params.set("from", auditFromDate.value);
-    if (auditToDate?.value) params.set("to", auditToDate.value);
+    if (canUseAuditFilters()) {
+      if (auditSchoolFilter?.value) params.set("schoolId", auditSchoolFilter.value);
+      if (auditUserFilter?.value) params.set("userId", auditUserFilter.value);
+      if (auditActionFilter?.value?.trim()) params.set("action", auditActionFilter.value.trim());
+      if (auditFromDate?.value) params.set("from", auditFromDate.value);
+      if (auditToDate?.value) params.set("to", auditToDate.value);
+    }
 
     tabCache.audit.promise = (async () => {
       const res = await apiFetch(`${API_BASE}/audit-logs?${params.toString()}`);
@@ -3951,7 +4244,7 @@
   async function loadDashboardMonitorInfo(options = {}) {
     if (!dashboardDbStatus || !dashboardDbLatency || !dashboardOpenAlerts || !dashboardAlertList) return;
 
-    const canSeeDb = canViewDashboardDatabaseStatus();
+    const canSeeDb = false;
     const canSeeOpenAlerts = canViewDashboardOpenAlerts();
     const canSeeWithoutSchedule = canViewDashboardSchoolsWithoutSchedule();
     const canSeeMonitorAlerts = canViewDashboardMonitorAlerts();
@@ -4101,8 +4394,12 @@
           ? monitorPayload.openAlertsTotal
           : alerts.length;
         dashboardOpenAlerts.textContent = String(openAlertsValue);
+        if (dashboardRecentAlertsLabel) {
+          dashboardRecentAlertsLabel.textContent = `${openAlertsValue} alertas recentes`;
+        }
       } else {
         dashboardOpenAlerts.textContent = "--";
+        if (dashboardRecentAlertsLabel) dashboardRecentAlertsLabel.textContent = "-- alertas recentes";
       }
 
       if (canSeeWithoutSchedule && dashboardSchoolsWithoutSchedule) {
@@ -4110,8 +4407,16 @@
           ? monitorPayload.schoolsWithoutSchedule
           : alerts.filter((item) => item.type === "school_without_schedule").length;
         dashboardSchoolsWithoutSchedule.textContent = String(withoutScheduleValue);
+        if (dashboardSchoolsWithoutScheduleText) {
+          dashboardSchoolsWithoutScheduleText.textContent = `${withoutScheduleValue} sem horario publicado`;
+        }
+        if (dashboardPendingSchoolsLabel) {
+          dashboardPendingSchoolsLabel.textContent = `${withoutScheduleValue} escolas sem horário`;
+        }
       } else if (dashboardSchoolsWithoutSchedule) {
         dashboardSchoolsWithoutSchedule.textContent = "--";
+        if (dashboardSchoolsWithoutScheduleText) dashboardSchoolsWithoutScheduleText.textContent = "-- sem horario publicado";
+        if (dashboardPendingSchoolsLabel) dashboardPendingSchoolsLabel.textContent = "-- escolas sem horário";
       }
 
       if (dashboardMonitorCheckedAt) {
@@ -4136,7 +4441,11 @@
         const pendingValue = Number.isFinite(monitorPayload?.pendingApprovals)
           ? monitorPayload.pendingApprovals
           : "--";
-        dashboardPendingApprovals.textContent = `Aprovacoes pendentes: ${pendingValue}`;
+        dashboardPendingApprovals.textContent = "mudanças pendentes";
+        if (dashboardApprovalsCount) dashboardApprovalsCount.textContent = String(pendingValue);
+        if (dashboardPendingApprovalsLabel) {
+          dashboardPendingApprovalsLabel.textContent = `${pendingValue} aprovações`;
+        }
       }
 
       if (dashboardApiUptime) {
@@ -4270,6 +4579,16 @@
     if (dashboardHttpTotalErrors) dashboardHttpTotalErrors.textContent = "--";
     if (dashboardHttpTopEndpoint) dashboardHttpTopEndpoint.textContent = "--";
     if (dashboardHttpLastSeen) dashboardHttpLastSeen.textContent = "Ultima coleta: --";
+    if (dashboardHttpTopEndpointDisplay) dashboardHttpTopEndpointDisplay.textContent = message;
+    if (dashboardHttpTotalRequestsDisplay) dashboardHttpTotalRequestsDisplay.textContent = "--";
+    if (dashboardHttpLastSeenDisplay) dashboardHttpLastSeenDisplay.textContent = "Última coleta: --";
+    if (dashboardHttpBars) {
+      dashboardHttpBars.innerHTML = `
+        <div class="rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+          ${escapeHtml(message)}
+        </div>
+      `;
+    }
     if (dashboardHttpMetricsBody) {
       dashboardHttpMetricsBody.innerHTML = `
         <tr>
@@ -4301,20 +4620,70 @@
         ? `${first.endpoint} (${first.requests} req)`
         : "Sem dados";
     }
+    if (dashboardHttpTopEndpointDisplay) {
+      dashboardHttpTopEndpointDisplay.textContent = first?.endpoint || "Sem endpoints registrados";
+    }
+    if (dashboardHttpTotalRequestsDisplay) {
+      dashboardHttpTotalRequestsDisplay.textContent = Number.isFinite(metrics.totalRequests)
+        ? String(metrics.totalRequests)
+        : "--";
+    }
     if (dashboardHttpLastSeen) {
       const lastSeen = first?.lastSeenAt ? new Date(first.lastSeenAt).toLocaleString("pt-BR") : "--";
       const scopeText = `janela: ${scope.windowMinutes || "--"} min | metodo: ${scope.method || "ALL"} | top: ${scope.topN || endpoints.length || "--"}`;
       dashboardHttpLastSeen.textContent = `Ultima coleta: ${lastSeen} | fonte: ${sourceLabel} | ${scopeText}`;
+      if (dashboardHttpLastSeenDisplay) {
+        dashboardHttpLastSeenDisplay.textContent = `Última coleta: ${lastSeen}`;
+      }
     }
 
     if (!dashboardHttpMetricsBody) return;
     if (!endpoints.length) {
+      if (dashboardHttpBars) {
+        dashboardHttpBars.innerHTML = `
+          <div class="rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+            Sem endpoints registrados.
+          </div>
+        `;
+      }
       dashboardHttpMetricsBody.innerHTML = `
         <tr>
           <td colspan="7" class="py-3 text-slate-500 dark:text-slate-400">Sem endpoints registrados.</td>
         </tr>
       `;
       return;
+    }
+
+    if (dashboardHttpBars) {
+      const topEndpoints = endpoints.slice(0, 4);
+      const maxRequests = Math.max(...topEndpoints.map((item) => Number(item.requests) || 0), 1);
+      dashboardHttpBars.innerHTML = topEndpoints
+        .map((item, index) => {
+          const requests = Number(item.requests) || 0;
+          const errors = Number(item.errors) || 0;
+          const width = Math.max(8, Math.round((requests / maxRequests) * 100));
+          const endpoint = item.endpoint || "-";
+          const errorLabel = errors > 0 ? `${errors} erro${errors === 1 ? "" : "s"}` : "sem erros";
+          return `
+            <button
+              type="button"
+              class="group block w-full rounded-xl px-1 py-1 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800/70"
+              title="${escapeHtml(endpoint)} | ${requests} requests | ${errorLabel}"
+            >
+              <div class="mb-1 flex items-center justify-between gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
+                <span class="min-w-0 truncate">${index + 1}. ${escapeHtml(endpoint)}</span>
+                <span class="shrink-0">${escapeHtml(requests)} req</span>
+              </div>
+              <div class="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800">
+                <div class="h-2.5 rounded-full ${errors > 0 ? "bg-amber-500" : "bg-sky-600"}" style="width: ${width}%"></div>
+              </div>
+              <div class="mt-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                ${escapeHtml(errorLabel)}${Number.isFinite(item.latencyAvgMs) ? ` | lat. media ${escapeHtml(item.latencyAvgMs)} ms` : ""}
+              </div>
+            </button>
+          `;
+        })
+        .join("");
     }
 
     dashboardHttpMetricsBody.innerHTML = "";
@@ -5138,6 +5507,7 @@
       event.preventDefault();
       switchSection("audit");
     });
+    bindDashboardShortcutCards();
 
     dashboardSchoolSelect?.addEventListener("change", (event) => {
       setCurrentSchoolId(event.target.value);
@@ -5184,22 +5554,28 @@
     cloneTemplateBtn?.addEventListener("click", applySelectedTemplate);
     exportBackupBtn?.addEventListener("click", exportCurrentBackup);
     importBackupInput?.addEventListener("change", importBackupFromFile);
-    refreshBackupsBtn?.addEventListener("click", loadBackupSnapshots);
-    previewBackupBtn?.addEventListener("click", previewSelectedBackup);
+    refreshBackupsBtn?.addEventListener("click", () => {
+      if (canRefreshBackups()) loadBackupSnapshots();
+    });
+    previewBackupBtn?.addEventListener("click", () => {
+      if (canPreviewBackups()) previewSelectedBackup();
+    });
     restoreBackupBtn?.addEventListener("click", restoreSelectedBackup);
     refreshScheduleRequestsBtn?.addEventListener("click", loadScheduleChangeRequests);
 
     auditApplyFiltersBtn?.addEventListener("click", () => {
+      if (!canUseAuditFilters()) return;
       auditOffset = 0;
       loadAuditLogs({ force: true, offset: 0 });
     });
     refreshAuditBtn?.addEventListener("click", () => loadAuditLogs({ force: true }));
     auditPrevPageBtn?.addEventListener("click", () => {
+      if (!canUseAuditFilters()) return;
       const offset = Math.max(0, auditOffset - AUDIT_PAGE_SIZE);
       loadAuditLogs({ offset });
     });
     auditNextPageBtn?.addEventListener("click", () => {
-      if (!auditHasMore) return;
+      if (!canUseAuditFilters() || !auditHasMore) return;
       loadAuditLogs({ offset: auditOffset + AUDIT_PAGE_SIZE });
     });
 

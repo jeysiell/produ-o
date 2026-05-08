@@ -129,22 +129,7 @@ async function loadDashboardAudioTracks() {
 }
 
 function applyDashboardPermissions(user) {
-  const hasDashboardFeature = (featureKey) => {
-    if (!user) return false;
-    const effective = user.effectivePermissions;
-    if (!effective || typeof effective !== "object") return false;
-    if (!effective?.menus?.dashboard) return false;
-    return Boolean(effective?.features?.[featureKey]);
-  };
-
-  const canSeeManualSection = hasDashboardFeature("dashboard_manual_section");
-  const canUseSignalAudio = hasDashboardFeature("dashboard_signal_audio");
-  dashboardSignalAudioEnabled = canUseSignalAudio;
-  const canPlayManual =
-    canSeeManualSection && canUseSignalAudio && hasDashboardFeature("dashboard_manual_play");
-  const canSeeLastSignal = hasDashboardFeature("dashboard_last_signal");
-  const canSeeNextSignal = hasDashboardFeature("dashboard_next_signal");
-  const canSeeScheduleInterface = hasDashboardFeature("dashboard_schedule_interface");
+  dashboardSignalAudioEnabled = false;
 
   const toggleSection = (elementId, shouldShow) => {
     const el = document.getElementById(elementId);
@@ -152,17 +137,16 @@ function applyDashboardPermissions(user) {
     el.classList.toggle("hidden", !shouldShow);
   };
 
-  toggleSection("dashboardManualCard", canSeeManualSection);
-  toggleSection("dashboardLastSignalCard", canSeeLastSignal);
-  toggleSection("dashboardNextSignalCard", canSeeNextSignal);
-  toggleSection("dashboardScheduleSectionCard", canSeeScheduleInterface);
+  toggleSection("dashboardManualCard", false);
+  toggleSection("dashboardLastSignalCard", false);
+  toggleSection("dashboardNextSignalCard", false);
+  toggleSection("dashboardScheduleSectionCard", false);
 
   const manualBtn = document.getElementById("btnManualPlay");
   if (!manualBtn) return;
 
-  manualBtn.disabled = !canPlayManual;
-  manualBtn.classList.toggle("opacity-50", !canPlayManual);
-  manualBtn.classList.toggle("cursor-not-allowed", !canPlayManual);
+  manualBtn.disabled = true;
+  manualBtn.classList.add("opacity-50", "cursor-not-allowed");
 }
 
 function clearTimers() {

@@ -254,14 +254,14 @@
     <div class="flex min-h-screen">
       <aside
         id="sidebar"
-        class="fixed inset-y-0 left-0 z-40 flex w-[86vw] max-w-72 -translate-x-full flex-col border-r border-slate-200/80 bg-white/95 backdrop-blur-xl transition duration-300 dark:border-slate-800 dark:bg-slate-900/95 md:static md:w-72 md:translate-x-0"
+        class="fixed inset-y-0 left-0 z-40 flex w-[86vw] max-w-72 -translate-x-full flex-col bg-white transition duration-300 dark:bg-slate-900 md:static md:w-72 md:translate-x-0"
       >
-        <div class="flex items-center justify-between border-b border-slate-200/80 px-6 py-6 dark:border-slate-800">
+        <div class="flex items-center justify-between px-9 py-7">
           <div>
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-              SinalTech
+            <h2 class="font-display text-3xl font-extrabold text-slate-950 dark:text-slate-100">SinalTech</h2>
+            <p class="mt-2 text-xs font-bold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">
+              Administrativo
             </p>
-            <h2 class="font-display text-2xl font-extrabold">Painel Central</h2>
           </div>
           <button
             id="closeSidebar"
@@ -272,53 +272,53 @@
           </button>
         </div>
 
-        <nav class="flex-1 space-y-2 px-4 py-6">
+        <nav class="flex-1 space-y-6 px-6 py-8">
           <a
             id="navDashboard"
             href="#"
-            class="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-soft dark:bg-slate-800"
+            class="flex items-center gap-5 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white dark:bg-slate-800"
           >
-            <i class="fas fa-chart-line"></i>
+            <span data-nav-marker class="h-4 w-4 rounded-full bg-cyan-400"></span>
             Dashboard
           </a>
           <a
             id="navConfig"
             href="#"
-            class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            class="flex items-center gap-5 rounded-xl px-2 py-1 text-sm font-bold text-slate-700 transition hover:text-slate-950 dark:text-slate-200"
           >
-            <i class="fas fa-sliders-h"></i>
+            <span data-nav-marker class="h-4 w-4 rounded-full bg-slate-300"></span>
             Configuracoes
           </a>
           <a
             id="navSchools"
             href="#"
-            class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            class="flex items-center gap-5 rounded-xl px-2 py-1 text-sm font-bold text-slate-700 transition hover:text-slate-950 dark:text-slate-200"
           >
-            <i class="fas fa-school"></i>
+            <span data-nav-marker class="h-4 w-4 rounded-full bg-slate-300"></span>
             Escolas
           </a>
           <a
             id="navUsers"
             href="#"
-            class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            class="flex items-center gap-5 rounded-xl px-2 py-1 text-sm font-bold text-slate-700 transition hover:text-slate-950 dark:text-slate-200"
           >
-            <i class="fas fa-users"></i>
+            <span data-nav-marker class="h-4 w-4 rounded-full bg-slate-300"></span>
             Usuarios
           </a>
           <a
             id="navAudios"
             href="#"
-            class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            class="flex items-center gap-5 rounded-xl px-2 py-1 text-sm font-bold text-slate-700 transition hover:text-slate-950 dark:text-slate-200"
           >
-            <i class="fas fa-music"></i>
+            <span data-nav-marker class="h-4 w-4 rounded-full bg-slate-300"></span>
             Audios
           </a>
           <a
             id="navAudits"
             href="#"
-            class="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            class="flex items-center gap-5 rounded-xl px-2 py-1 text-sm font-bold text-slate-700 transition hover:text-slate-950 dark:text-slate-200"
           >
-            <i class="fas fa-clipboard-list"></i>
+            <span data-nav-marker class="h-4 w-4 rounded-full bg-slate-300"></span>
             Auditoria
           </a>
         </nav>
@@ -326,7 +326,7 @@
 
       <div class="flex flex-1 flex-col">
         <header
-          class="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75"
+          class="hidden"
         >
           <div
             class="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"
@@ -351,7 +351,7 @@
 
             <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-4">
               <button
-                id="darkToggle"
+                id="legacyDarkToggle"
                 class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-base text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 aria-label="Alternar tema"
                 title="Alternar tema"
@@ -363,17 +363,17 @@
               <div
                 class="rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold shadow-sm dark:border-slate-700 dark:bg-slate-900"
               >
-                <span id="currentTime">--:--:--</span>
+                <span id="legacyCurrentTime">--:--:--</span>
               </div>
 
               <div
-                id="authUserBadge"
+                id="legacyAuthUserBadge"
                 class="hidden min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold shadow-sm dark:border-slate-700 dark:bg-slate-900"
               >
-                <i id="authUserIcon" class="fas fa-user-shield text-blue-600 dark:text-sky-300"></i>
-                <span id="authUserName" class="min-w-0 truncate">Usuario</span>
+                <i id="legacyAuthUserIcon" class="fas fa-user-shield text-blue-600 dark:text-sky-300"></i>
+                <span id="legacyAuthUserName" class="min-w-0 truncate">Usuario</span>
                 <span
-                  id="authUserRole"
+                  id="legacyAuthUserRole"
                   class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                 >
                   perfil
@@ -381,14 +381,14 @@
               </div>
 
               <button
-                id="changePasswordBtn"
+                id="legacyChangePasswordBtn"
                 class="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <i class="fas fa-key mr-1"></i>Senha
               </button>
 
               <button
-                id="logoutBtn"
+                id="legacyLogoutBtn"
                 class="hidden rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40"
               >
                 <i class="fas fa-sign-out-alt mr-1"></i>Sair
@@ -411,160 +411,123 @@
           </button>
         </div>
 
-        <main class="min-w-0 flex-1 p-3 sm:p-6 lg:p-8">
-          <section id="dashboardSection" class="space-y-6">
-            <section class="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-              <div
-                id="dashboardManualCard"
-                class="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft dark:border-slate-800 dark:bg-slate-900 sm:p-6"
-              >
-                <div class="mb-5 flex items-center gap-3">
-                  <div
-                    class="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
-                  >
-                    <i class="fas fa-hand-pointer"></i>
-                  </div>
-                  <div>
-                    <p
-                      class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                    >
-                      Manual
-                    </p>
-                    <h3 class="font-display text-lg font-bold">Acionamento Manual</h3>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <div>
-                    <label
-                      class="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                    >
-                      Escolher Som
-                    </label>
-                    <select
-                      id="manualMusic"
-                      class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
-                    >
-                      <option value="">Cadastre um audio</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                    >
-                      Duracao (segundos)
-                    </label>
-                    <input
-                      id="manualDuration"
-                      type="number"
-                      value="12"
-                      min="1"
-                      max="60"
-                      readonly
-                      class="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-600 outline-none dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300"
-                    />
-                  </div>
-
-                  <div class="flex items-end sm:col-span-2 xl:col-span-1">
-                    <button
-                      id="btnManualPlay"
-                      class="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
-                    >
-                      <i class="fas fa-play mr-2"></i>Tocar Sinal Agora
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="grid gap-6 sm:grid-cols-2 xl:grid-cols-1">
-                <div
-                  id="dashboardLastSignalCard"
-                  class="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Ultimo Sinal
-                  </p>
-                  <h2
-                    id="currentSignalTime"
-                    class="mt-3 font-display text-4xl font-extrabold"
-                  >
-                    --:--
+        <main class="min-w-0 flex-1 bg-slate-100 p-3 transition-colors dark:bg-slate-950 sm:p-6 lg:p-7">
+          <section id="dashboardSection" class="space-y-7">
+            <section
+              class="rounded-[1.35rem] bg-white px-8 py-3 shadow-soft dark:bg-slate-900"
+            >
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 class="font-display text-2xl font-extrabold text-slate-950 dark:text-slate-100">
+                    Painel administrativo
                   </h2>
-                  <p
-                    id="currentSignalName"
-                    class="mt-2 text-sm text-slate-500 dark:text-slate-400"
-                  >
-                    Aguardando...
+                  <p class="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                    Gestão, auditoria, cadastros, aprovações e saúde operacional das escolas
                   </p>
                 </div>
-
+                <div class="flex items-center gap-4">
+                  <button
+                    id="darkToggle"
+                    class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-base text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    aria-label="Alternar tema"
+                    title="Alternar tema"
+                  >
+                    <i data-theme-icon="moon" class="fas fa-moon"></i>
+                    <i data-theme-icon="sun" class="fas fa-sun hidden text-amber-400"></i>
+                  </button>
+                  <span id="currentTime" class="hidden">--:--:--</span>
+                  <button
+                    id="authUserBadge"
+                    class="hidden min-w-32 items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 py-3 text-sm font-extrabold text-white dark:bg-slate-800"
+                    type="button"
+                    title="Usuário autenticado"
+                  >
+                    <i id="authUserIcon" class="fas fa-user-shield hidden"></i>
+                    <span id="authUserName" class="min-w-0 truncate">Admin</span>
+                    <span id="authUserRole" class="hidden">perfil</span>
+                  </button>
+                  <button id="changePasswordBtn" class="sr-only" type="button">Senha</button>
+                  <button id="logoutBtn" class="sr-only" type="button">Sair</button>
+                </div>
               </div>
             </section>
 
-            <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <article
-                id="dashboardDatabaseCard"
-                class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
-              >
-                <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Banco de Dados
+            <section id="dashboardSummaryCards" class="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+              <article class="rounded-[1.35rem] bg-white p-7 shadow-soft dark:bg-slate-900">
+                <p class="text-sm font-extrabold uppercase text-slate-500 dark:text-slate-400">
+                  Escolas ativas
                 </p>
-                <p id="dashboardDbStatus" class="mt-2 text-xl font-extrabold text-emerald-600">
-                  Verificando...
+                <p id="dashboardActiveSchools" class="mt-2 font-display text-4xl font-extrabold text-slate-950 dark:text-slate-100">
+                  --
                 </p>
-                <p id="dashboardDbLatency" class="text-sm text-slate-500 dark:text-slate-400">
-                  Latencia: --
-                </p>
-                <p id="dashboardApiUptime" class="text-sm text-slate-500 dark:text-slate-400">
-                  Uptime API: --
-                </p>
-                <p id="dashboardLastSweeps" class="text-xs text-slate-400 dark:text-slate-500">
-                  Ultimas execucoes: --
+                <p id="dashboardSchoolsWithoutScheduleText" class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">
+                  -- sem horario publicado
                 </p>
               </article>
 
-              <article
-                id="dashboardOpenAlertsCard"
-                class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
-              >
-                <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Alertas Abertos
+              <article class="rounded-[1.35rem] bg-white p-7 shadow-soft dark:bg-slate-900">
+                <p class="text-sm font-extrabold uppercase text-slate-500 dark:text-slate-400">
+                  Usuários
                 </p>
-                <p id="dashboardOpenAlerts" class="mt-2 text-xl font-extrabold text-amber-600">
+                <p id="dashboardUsersCount" class="mt-2 font-display text-4xl font-extrabold text-slate-950 dark:text-slate-100">
                   --
                 </p>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Inclui erros de reproducao e monitor.</p>
-                <p id="dashboardPlaybackFailures" class="text-sm text-slate-500 dark:text-slate-400">
-                  Falhas de toque (24h): --
+                <p id="dashboardAdminsCount" class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">
+                  -- administradores
                 </p>
               </article>
 
-              <article
-                id="dashboardSchoolsWithoutScheduleCard"
-                class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
-              >
-                <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Escolas Sem Horario
+              <article class="rounded-[1.35rem] bg-white p-7 shadow-soft dark:bg-slate-900">
+                <p class="text-sm font-extrabold uppercase text-slate-500 dark:text-slate-400">
+                  Áudios
                 </p>
-                <p id="dashboardSchoolsWithoutSchedule" class="mt-2 text-xl font-extrabold text-rose-600">
+                <p id="dashboardAudioCount" class="mt-2 font-display text-4xl font-extrabold text-slate-950 dark:text-slate-100">
                   --
                 </p>
-                <p id="dashboardMonitorCheckedAt" class="text-sm text-slate-500 dark:text-slate-400">
-                  Ultima verificacao: --
+                <p id="dashboardAudioUsage" class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">
+                  -- do limite usado
                 </p>
-                <p id="dashboardPendingApprovals" class="text-sm text-slate-500 dark:text-slate-400">
-                  Aprovacoes pendentes: --
+              </article>
+
+              <article class="rounded-[1.35rem] bg-white p-7 shadow-soft dark:bg-slate-900">
+                <p class="text-sm font-extrabold uppercase text-slate-500 dark:text-slate-400">
+                  Aprovações
                 </p>
+                <p id="dashboardApprovalsCount" class="mt-2 font-display text-4xl font-extrabold text-sky-600">
+                  --
+                </p>
+                <p id="dashboardPendingApprovals" class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">
+                  mudanças pendentes
+                </p>
+              </article>
+
+              <article id="dashboardDatabaseCard" class="hidden">
+                <p id="dashboardDbStatus">Verificando...</p>
+                <p id="dashboardDbLatency">Latencia: --</p>
+                <p id="dashboardApiUptime">Uptime API: --</p>
+                <p id="dashboardLastSweeps">Ultimas execucoes: --</p>
+              </article>
+              <article id="dashboardOpenAlertsCard" class="hidden">
+                <p id="dashboardOpenAlerts">--</p>
+                <p id="dashboardPlaybackFailures">Falhas de toque (24h): --</p>
+              </article>
+              <article id="dashboardSchoolsWithoutScheduleCard" class="hidden">
+                <p id="dashboardSchoolsWithoutSchedule">--</p>
+                <p id="dashboardMonitorCheckedAt">Ultima verificacao: --</p>
               </article>
             </section>
 
             <section
               id="dashboardMonitorAlertsCard"
-              class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+              class="rounded-[1.35rem] bg-white p-8 shadow-soft dark:bg-slate-900"
             >
-              <div class="mb-3 flex items-center justify-between gap-3">
-                <h3 class="font-display text-lg font-bold">Alertas de Monitoramento</h3>
+              <div class="mb-8 flex items-center justify-between gap-3">
+                <div>
+                  <h3 class="font-display text-2xl font-extrabold text-slate-950 dark:text-slate-100">Pendências operacionais</h3>
+                  <p class="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                    Itens que precisam de ação administrativa antes de aparecerem corretamente no link público
+                  </p>
+                </div>
                 <button
                   id="refreshDashboardMonitorBtn"
                   type="button"
@@ -573,23 +536,58 @@
                   Atualizar
                 </button>
               </div>
-              <ul id="dashboardAlertList" class="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+              <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                <button
+                  type="button"
+                  id="dashboardPendingSchoolsCard"
+                  class="rounded-2xl border border-orange-200 bg-orange-50 px-6 py-5 text-left transition hover:border-orange-300 hover:bg-orange-100 dark:border-orange-900/50 dark:bg-orange-950/30"
+                >
+                  <p id="dashboardPendingSchoolsLabel" class="text-base font-extrabold text-orange-800 dark:text-orange-300">-- escolas sem horário</p>
+                  <p class="mt-2 text-sm font-extrabold text-orange-700 dark:text-orange-400">Abrir cadastro de escolas</p>
+                </button>
+                <button
+                  type="button"
+                  id="dashboardMissingAudioCard"
+                  class="rounded-2xl border border-red-200 bg-red-50 px-6 py-5 text-left transition hover:border-red-300 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30"
+                >
+                  <p id="dashboardMissingAudioLabel" class="text-base font-extrabold text-red-800 dark:text-red-300">-- sinais sem áudio</p>
+                  <p class="mt-2 text-sm font-extrabold text-red-700 dark:text-red-400">Revisar biblioteca</p>
+                </button>
+                <button
+                  type="button"
+                  id="dashboardApprovalsCard"
+                  class="rounded-2xl border border-blue-200 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-900/50 dark:bg-blue-950/30"
+                >
+                  <p id="dashboardPendingApprovalsLabel" class="text-base font-extrabold text-blue-700 dark:text-blue-300">-- aprovações</p>
+                  <p class="mt-2 text-sm font-extrabold text-blue-600 dark:text-blue-400">Analisar solicitações</p>
+                </button>
+                <button
+                  type="button"
+                  id="dashboardRecentAlertsCard"
+                  class="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-5 text-left transition hover:border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/70"
+                >
+                  <p id="dashboardRecentAlertsLabel" class="text-base font-extrabold text-slate-800 dark:text-slate-100">-- alertas recentes</p>
+                  <p class="mt-2 text-sm font-extrabold text-slate-500 dark:text-slate-400">Ver monitoramento</p>
+                </button>
+              </div>
+              <ul id="dashboardAlertList" class="hidden space-y-2 text-sm text-slate-600 dark:text-slate-300">
                 <li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Carregando alertas...</li>
               </ul>
             </section>
 
+            <div class="grid gap-7 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.95fr)]">
             <section
               id="dashboardHttpMetricsCard"
-              class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+              class="rounded-[1.35rem] bg-white p-8 shadow-soft dark:bg-slate-900"
             >
-              <div class="mb-3 flex flex-col gap-3">
+              <div class="mb-8 flex flex-col gap-3">
                 <div>
-                  <h3 class="font-display text-lg font-bold">Observabilidade HTTP</h3>
-                  <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Taxa de erro, latencia e endpoints mais acessados.
+                  <h3 class="font-display text-2xl font-extrabold text-slate-950 dark:text-slate-100">Monitoramento e métricas HTTP</h3>
+                  <p class="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                    Volume de requisições, erros 5xx, endpoint mais acessado e última coleta
                   </p>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
+                <div class="hidden flex-wrap items-center gap-2">
                   <select
                     id="dashboardHttpMethodFilter"
                     class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50 sm:w-auto"
@@ -629,7 +627,7 @@
                 </div>
               </div>
 
-              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div class="hidden grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
                   <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Requests</p>
                   <p id="dashboardHttpTotalRequests" class="mt-1 text-xl font-extrabold text-slate-800 dark:text-slate-100">--</p>
@@ -645,7 +643,23 @@
                 </article>
               </div>
 
-                <div class="mt-4 -mx-1 overflow-x-auto px-1">
+              <div class="rounded-xl bg-slate-100 px-6 py-3 dark:bg-slate-800">
+                <div class="flex items-center justify-between gap-4 text-sm font-extrabold">
+                  <span id="dashboardHttpTopEndpointDisplay" class="min-w-0 truncate text-slate-700 dark:text-slate-200">GET /api/public/schools/:token/player</span>
+                  <span id="dashboardHttpTotalRequestsDisplay" class="shrink-0 text-sky-600 dark:text-sky-300">--</span>
+                </div>
+              </div>
+
+              <div id="dashboardHttpBars" class="mt-7 space-y-4">
+                <div class="rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                  Carregando endpoints...
+                </div>
+              </div>
+              <p id="dashboardHttpLastSeenDisplay" class="mt-7 text-sm font-bold text-slate-500 dark:text-slate-400">
+                Última coleta: --
+              </p>
+
+                <div class="hidden mt-4 -mx-1 overflow-x-auto px-1">
                 <table class="w-full min-w-[720px] border-collapse text-xs sm:min-w-[760px]">
                   <thead class="border-b border-slate-200 text-left dark:border-slate-800">
                     <tr class="text-slate-500 dark:text-slate-400">
@@ -669,16 +683,16 @@
 
             <section
               id="dashboardOperationalHistoryCard"
-              class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+              class="rounded-[1.35rem] bg-white p-8 shadow-soft dark:bg-slate-900"
             >
-              <div class="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div class="mb-7 flex flex-col gap-3">
                 <div>
-                  <h3 class="font-display text-lg font-bold">Historico Operacional</h3>
-                  <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Tendencia diaria de latencia, falhas de toque e alertas.
+                  <h3 class="font-display text-2xl font-extrabold text-slate-950 dark:text-slate-100">Auditoria recente</h3>
+                  <p class="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                    Últimas alterações relevantes
                   </p>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
+                <div class="hidden flex-wrap items-center gap-2">
                   <select
                     id="dashboardOperationalSchoolFilter"
                     class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900/50"
@@ -696,10 +710,16 @@
                   </select>
                 </div>
               </div>
-              <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/30">
+              <div class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/30">
                 <canvas id="dashboardOperationalCanvas" class="h-[260px] w-full"></canvas>
               </div>
-              <div class="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+              <div id="dashboardRecentAuditList" class="space-y-4">
+                <div class="rounded-xl bg-slate-50 px-5 py-4 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">Usuário alterou horário</div>
+                <div class="rounded-xl bg-slate-50 px-5 py-4 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">Áudio enviado</div>
+                <div class="rounded-xl bg-slate-50 px-5 py-4 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">Escola desativada</div>
+                <div class="rounded-xl bg-slate-50 px-5 py-4 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">Permissão atualizada</div>
+              </div>
+              <div class="hidden mt-3 flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                 <span class="inline-flex items-center gap-1">
                   <span class="h-2 w-2 rounded-full bg-sky-600"></span> Latencia media
                 </span>
@@ -710,14 +730,15 @@
                   <span class="h-2 w-2 rounded-full bg-rose-600"></span> Alertas abertos
                 </span>
               </div>
-              <p id="dashboardOperationalMeta" class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              <p id="dashboardOperationalMeta" class="hidden mt-2 text-xs text-slate-500 dark:text-slate-400">
                 Carregando historico operacional...
               </p>
             </section>
+            </div>
 
             <section
-              id="dashboardScheduleSectionCard"
-              class="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+              class="hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+              aria-hidden="true"
             >
               <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -895,6 +916,30 @@
             </section>
 
             <section
+              id="scheduleApprovalSection"
+              class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h3 class="font-display text-lg font-bold">Aprovacao de Mudancas</h3>
+                  <p class="text-sm text-slate-500 dark:text-slate-400">
+                    Admin escola envia solicitacoes e superadmin aprova/publica.
+                  </p>
+                </div>
+                <button
+                  id="refreshScheduleRequestsBtn"
+                  type="button"
+                  class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                >
+                  Atualizar
+                </button>
+              </div>
+              <ul id="scheduleRequestsList" class="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                <li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Carregando solicitacoes...</li>
+              </ul>
+            </section>
+
+            <section
               class="rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900"
             >
               <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 text-sm dark:border-slate-800 md:flex-row md:items-center md:justify-between">
@@ -944,30 +989,6 @@
                   </tbody>
                 </table>
               </div>
-            </section>
-
-            <section
-              id="scheduleApprovalSection"
-              class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
-            >
-              <div class="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h3 class="font-display text-lg font-bold">Aprovacao de Mudancas</h3>
-                  <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Admin escola envia solicitacoes e superadmin aprova/publica.
-                  </p>
-                </div>
-                <button
-                  id="refreshScheduleRequestsBtn"
-                  type="button"
-                  class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-                >
-                  Atualizar
-                </button>
-              </div>
-              <ul id="scheduleRequestsList" class="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                <li class="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-800">Carregando solicitacoes...</li>
-              </ul>
             </section>
           </section>
 
