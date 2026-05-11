@@ -295,6 +295,17 @@
           white-space: nowrap;
         }
       }
+
+      @media (min-width: 768px) {
+        #sidebar {
+          position: sticky;
+          top: 0;
+          height: 100vh;
+          flex-shrink: 0;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+        }
+      }
     </style>
   </head>
 
