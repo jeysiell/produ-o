@@ -157,6 +157,18 @@
 
         #sidebar {
           width: min(88vw, 20rem);
+          overflow-y: auto;
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        #sidebar nav {
+          padding-left: 1rem !important;
+          padding-right: 1rem !important;
+        }
+
+        #sidebar nav a {
+          min-height: 48px;
+          padding: 0.75rem 1rem !important;
         }
 
         #pageTitle {
@@ -175,6 +187,13 @@
         #authUserBadge {
           max-width: 46vw;
           overflow: hidden;
+          padding-left: 0.875rem !important;
+          padding-right: 0.875rem !important;
+        }
+
+        #authUserDropdown {
+          right: 0;
+          width: min(14rem, calc(100vw - 1.5rem));
         }
 
         #authUserName {
@@ -196,6 +215,42 @@
         #scheduleApprovalSection {
           border-radius: 1rem !important;
           padding: 1rem !important;
+        }
+
+        #dashboardSection {
+          gap: 1rem !important;
+        }
+
+        #dashboardSection > * + * {
+          margin-top: 1rem !important;
+        }
+
+        #dashboardSummaryCards {
+          gap: 0.875rem !important;
+        }
+
+        #dashboardSummaryCards article p:nth-child(2) {
+          font-size: 2rem !important;
+          line-height: 2.25rem !important;
+        }
+
+        #dashboardMonitorAlertsCard > div:first-child,
+        #dashboardHttpMetricsCard > div:first-child,
+        #dashboardOperationalHistoryCard > div:first-child {
+          margin-bottom: 1rem !important;
+        }
+
+        #dashboardMonitorAlertsCard h3,
+        #dashboardHttpMetricsCard h3,
+        #dashboardOperationalHistoryCard h3 {
+          font-size: 1.25rem !important;
+          line-height: 1.5rem !important;
+        }
+
+        #dashboardHttpTopEndpointDisplay,
+        #dashboardRecentAuditList,
+        #dashboardHttpBars {
+          overflow-wrap: anywhere;
         }
 
         #currentSignalTime,
@@ -234,6 +289,10 @@
           height: 5.5rem;
           padding-left: 0.5rem;
           padding-right: 0.5rem;
+        }
+
+        table {
+          white-space: nowrap;
         }
       }
     </style>
@@ -333,7 +392,7 @@
           >
             <div class="flex min-w-0 items-center gap-3">
               <button
-                id="menuBtn"
+                id="legacyMenuBtn"
                 class="rounded-xl p-2 text-2xl text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 md:hidden"
                 aria-label="Abrir menu"
               >
@@ -417,13 +476,23 @@
               class="rounded-[1.35rem] bg-white px-8 py-3 shadow-soft dark:bg-slate-900"
             >
               <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
+                <div class="flex min-w-0 items-start gap-3">
+                  <button
+                    id="mainMenuBtn"
+                    class="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700 md:hidden"
+                    type="button"
+                    aria-label="Abrir menu"
+                  >
+                    <i class="fas fa-bars"></i>
+                  </button>
+                  <div class="min-w-0">
                   <h2 class="font-display text-2xl font-extrabold text-slate-950 dark:text-slate-100">
                     Painel administrativo
                   </h2>
                   <p class="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
                     Gestão, auditoria, cadastros, aprovações e saúde operacional das escolas
                   </p>
+                  </div>
                 </div>
                 <div class="relative flex items-center gap-4">
                   <button

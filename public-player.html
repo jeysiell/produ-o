@@ -70,12 +70,97 @@
         border-color: rgba(30, 41, 59, 0.85);
         background: linear-gradient(180deg, #38bdf8, #0e7490);
       }
+      @media (max-width: 768px) {
+        html,
+        body {
+          min-height: 100%;
+          overflow-x: hidden;
+        }
+
+        body {
+          height: auto !important;
+          min-height: 100dvh;
+          overflow-y: auto !important;
+          -webkit-text-size-adjust: 100%;
+        }
+
+        input,
+        select,
+        button {
+          font-size: 16px !important;
+        }
+
+        #publicPlayerMain {
+          height: auto !important;
+          min-height: 100dvh;
+          align-items: stretch !important;
+          padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom)) !important;
+        }
+
+        #playerFrame {
+          aspect-ratio: auto !important;
+          max-height: none !important;
+          min-height: calc(100dvh - 1.5rem);
+          border-radius: 1.25rem !important;
+        }
+
+        #playerHeader {
+          padding: 1.25rem !important;
+        }
+
+        #schoolName {
+          white-space: normal !important;
+          font-size: 2rem !important;
+          line-height: 2.3rem !important;
+        }
+
+        #clock {
+          font-size: clamp(3.5rem, 17vw, 5rem) !important;
+        }
+
+        #nextSignal {
+          font-size: 1.35rem !important;
+          line-height: 1.65rem !important;
+          overflow-wrap: anywhere;
+        }
+
+        #scheduledStatus {
+          font-size: 1rem !important;
+          line-height: 1.35rem !important;
+        }
+
+        #playerContent {
+          min-height: 0;
+          padding: 1rem !important;
+        }
+
+        #scheduleSections {
+          max-height: 42dvh;
+          min-height: 17rem;
+          padding-right: 0.35rem !important;
+        }
+
+        #sidePanel {
+          overflow: visible !important;
+        }
+
+        #sidePanel article {
+          border-radius: 1.125rem !important;
+        }
+
+        #audioCount,
+        #playingSignal {
+          font-size: 1.35rem !important;
+          line-height: 1.7rem !important;
+          overflow-wrap: anywhere;
+        }
+      }
     </style>
   </head>
   <body class="h-screen overflow-hidden bg-slate-100 text-slate-900 transition-colors duration-500 dark:bg-slate-950 dark:text-slate-100">
-    <main class="mx-auto flex h-screen w-full max-w-[1600px] items-center px-4 py-4 sm:px-6">
-      <section class="flex aspect-video max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-[2rem] bg-white shadow-soft transition-colors dark:bg-slate-900 dark:shadow-black/30">
-        <header class="shrink-0 bg-slate-950 px-6 py-6 text-white sm:px-10 lg:px-12">
+    <main id="publicPlayerMain" class="mx-auto flex h-screen w-full max-w-[1600px] items-center px-4 py-4 sm:px-6">
+      <section id="playerFrame" class="flex aspect-video max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-[2rem] bg-white shadow-soft transition-colors dark:bg-slate-900 dark:shadow-black/30">
+        <header id="playerHeader" class="shrink-0 bg-slate-950 px-6 py-6 text-white sm:px-10 lg:px-12">
           <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
             <div class="min-w-0">
               <div class="flex items-center gap-3">
@@ -126,7 +211,7 @@
           </div>
         </header>
 
-        <section class="grid min-h-0 flex-1 gap-5 px-6 py-5 sm:px-10 lg:grid-cols-[minmax(0,1fr)_430px] lg:px-12">
+        <section id="playerContent" class="grid min-h-0 flex-1 gap-5 px-6 py-5 sm:px-10 lg:grid-cols-[minmax(0,1fr)_430px] lg:px-12">
           <section class="flex min-h-0 flex-col">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
@@ -149,7 +234,7 @@
             ></div>
           </section>
 
-          <aside class="min-h-0 space-y-2 overflow-hidden">
+          <aside id="sidePanel" class="min-h-0 space-y-2 overflow-hidden">
             <article class="rounded-3xl bg-slate-50 p-3 transition-colors dark:bg-slate-800">
               <p class="text-sm font-bold text-slate-500 dark:text-slate-400">Sinais de hoje</p>
               <p id="audioCount" class="mt-1 text-2xl font-black text-slate-950 dark:text-slate-100">

@@ -426,6 +426,9 @@
   const bellIcon = document.getElementById("bellIcon");
   const countdownBadge = document.getElementById("countdownBadge");
   const sidebar = document.getElementById("sidebar");
+  const mainMenuBtn = document.getElementById("mainMenuBtn");
+  const legacyMenuBtn = document.getElementById("legacyMenuBtn");
+  const closeSidebarBtn = document.getElementById("closeSidebar");
   const dashboardManualCard = document.getElementById("dashboardManualCard");
   const dashboardLastSignalCard = document.getElementById("dashboardLastSignalCard");
   const dashboardNextSignalCard = document.getElementById("dashboardNextSignalCard");
@@ -1346,6 +1349,10 @@
     if (window.innerWidth < 768) {
       sidebar?.classList.add("-translate-x-full");
     }
+  }
+
+  function openSidebarOnMobile() {
+    sidebar?.classList.remove("-translate-x-full");
   }
 
   function setNavState(el, isActive) {
@@ -5532,6 +5539,10 @@
     window.getCurrentSchoolId = getCurrentSchoolId;
     window.isAuthenticated = () => Boolean(currentUser);
     populateUserPresetOptions();
+
+    mainMenuBtn?.addEventListener("click", openSidebarOnMobile);
+    legacyMenuBtn?.addEventListener("click", openSidebarOnMobile);
+    closeSidebarBtn?.addEventListener("click", closeSidebarOnMobile);
 
     navDashboard?.addEventListener("click", (event) => {
       event.preventDefault();

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
+  username VARCHAR(80),
   password_hash TEXT NOT NULL,
   role VARCHAR(30) NOT NULL CHECK (role IN ('superadmin', 'admin_escola', 'somente_leitura')),
   school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
@@ -34,6 +35,9 @@ CREATE TABLE IF NOT EXISTS users (
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS username VARCHAR(80);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY,
@@ -135,11 +139,18 @@ CREATE TABLE IF NOT EXISTS operational_daily_metrics (
 CREATE INDEX IF NOT EXISTS idx_schedules_school_period_time
   ON schedules (school_id, period, time);
 
+CREATE INDEX IF NOT EXISTS idx_schedules_school_id
+  ON schedules (school_id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_public_token
   ON schools (public_token);
 
 CREATE INDEX IF NOT EXISTS idx_users_school_id
   ON users (school_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower
+  ON users (LOWER(username))
+  WHERE username IS NOT NULL AND username <> '';
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
   ON audit_logs (created_at DESC);
