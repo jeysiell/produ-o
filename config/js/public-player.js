@@ -15,6 +15,7 @@
     currentAudio: null,
     playedKeys: new Set(),
     emphasizedSignalKey: "",
+    timelineRenderedMinute: null,
     timelineUserScrolledAt: 0,
   };
 
@@ -227,13 +228,20 @@
     );
     if (!target) return;
 
-    const top = target.offsetTop - scheduleSections.clientHeight / 2 + target.offsetHeight / 2;
-    scheduleSections.scrollTo({ top: Math.max(0, top), behavior });
+    const containerRect = scheduleSections.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const relativeTop = targetRect.top - containerRect.top + scheduleSections.scrollTop;
+    const centeredTop = relativeTop - scheduleSections.clientHeight / 2 + targetRect.height / 2;
+    const maxTop = Math.max(0, scheduleSections.scrollHeight - scheduleSections.clientHeight);
+    const nextTop = Math.min(Math.max(0, centeredTop), maxTop);
+    scheduleSections.scrollTo({ top: nextTop, behavior });
   }
 
   function renderSchedule(options = {}) {
+    const previousScrollTop = scheduleSections.scrollTop;
     scheduleSections.innerHTML = "";
     const nowMinutes = getCurrentMinutes();
+    state.timelineRenderedMinute = nowMinutes;
     const timelineSignals = getTimelineSignals(nowMinutes);
     const upcoming = timelineSignals.find((signal) => {
       const minutes = getSignalMinutes(signal);
@@ -301,6 +309,8 @@
 
     if (options.scrollToEmphasis) {
       scrollTimelineToEmphasis({ behavior: options.behavior || "auto" });
+    } else {
+      scheduleSections.scrollTop = previousScrollTop;
     }
   }
 
@@ -462,9 +472,12 @@
       }
     }
     const previousEmphasisKey = state.emphasizedSignalKey;
+    const previousRenderedMinute = state.timelineRenderedMinute;
     updateNextSignal();
     if (previousEmphasisKey !== state.emphasizedSignalKey) {
       renderSchedule({ scrollToEmphasis: true, behavior: "smooth" });
+    } else if (previousRenderedMinute !== getCurrentMinutes()) {
+      renderSchedule();
     }
     checkScheduledSignal();
   }
