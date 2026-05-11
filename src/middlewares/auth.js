@@ -29,7 +29,7 @@ function createAuthMiddleware({
     try {
       const baseUserResult = await pool.query(
         `
-        SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+        SELECT u.id, u.name, u.email, u.username, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                s.name AS school_name, s.active AS school_active
         FROM users u
         LEFT JOIN schools s ON s.id = u.school_id
@@ -65,7 +65,7 @@ function createAuthMiddleware({
         if (simulatedUserId) {
           const simulatedResult = await pool.query(
             `
-            SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+            SELECT u.id, u.name, u.email, u.username, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                    s.name AS school_name, s.active AS school_active
             FROM users u
             LEFT JOIN schools s ON s.id = u.school_id

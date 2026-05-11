@@ -9,6 +9,8 @@ function registerAuthUsersRoutes(app, deps) {
     assignableRoles,
     toIntId,
     normalizePermissionsPayload,
+    normalizeUsername,
+    isValidUsername,
     sanitizeUser,
     isStrongPassword,
     getPasswordPolicyDescription,
@@ -37,7 +39,7 @@ function registerAuthUsersRoutes(app, deps) {
         const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
         const result = await pool.query(
           `
-          SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+          SELECT u.id, u.name, u.email, u.username, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                  s.name AS school_name
           FROM users u
           LEFT JOIN schools s ON s.id = u.school_id
@@ -63,14 +65,18 @@ function registerAuthUsersRoutes(app, deps) {
     async (req, res) => {
       const name = String(req.body?.name || "").trim();
       const email = String(req.body?.email || "").trim().toLowerCase();
+      const username = normalizeUsername(req.body?.username);
       const password = String(req.body?.password || "");
       const role = String(req.body?.role || "").trim();
       const requestedSchoolId = req.body?.schoolId !== undefined ? toIntId(req.body.schoolId) : null;
       const requestedPermissions = normalizePermissionsPayload(req.body?.permissions);
       const active = req.body?.active === false ? false : true;
 
-      if (!name || !email || !password || !assignableRoles.includes(role)) {
+      if (!name || !email || !username || !password || !assignableRoles.includes(role)) {
         return res.status(400).json({ error: "invalid_user_payload" });
+      }
+      if (!isValidUsername(username)) {
+        return res.status(400).json({ error: "invalid_username" });
       }
       if (!isStrongPassword(password)) {
         return res.status(400).json({ error: "weak_password", policy: getPasswordPolicyDescription() });
@@ -103,11 +109,11 @@ function registerAuthUsersRoutes(app, deps) {
         const passwordHash = await bcrypt.hash(password, 12);
         const result = await pool.query(
           `
-          INSERT INTO users (name, email, password_hash, role, school_id, permissions, active)
-          VALUES ($1,$2,$3,$4,$5,$6,$7)
-          RETURNING id, name, email, role, school_id, permissions, active, created_at, updated_at
+          INSERT INTO users (name, email, username, password_hash, role, school_id, permissions, active)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          RETURNING id, name, email, username, role, school_id, permissions, active, created_at, updated_at
           `,
-          [name, email, passwordHash, role, targetSchoolId, JSON.stringify(requestedPermissions), active]
+          [name, email, username, passwordHash, role, targetSchoolId, JSON.stringify(requestedPermissions), active]
         );
         const created = sanitizeUser(result.rows[0]);
         const meta = getRequestMeta(req);
@@ -124,7 +130,7 @@ function registerAuthUsersRoutes(app, deps) {
         });
         res.status(201).json(created);
       } catch (error) {
-        if (error?.code === "23505") return res.status(409).json({ error: "duplicate_email" });
+        if (error?.code === "23505") return res.status(409).json({ error: "duplicate_user_identifier" });
         console.error("POST /api/auth/users error:", error);
         sendInternalError(res, "failed_to_create_user", error);
       }
@@ -144,7 +150,7 @@ function registerAuthUsersRoutes(app, deps) {
       try {
         const beforeResult = await pool.query(
           `
-          SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+          SELECT u.id, u.name, u.email, u.username, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                  s.name AS school_name
           FROM users u
           LEFT JOIN schools s ON s.id = u.school_id
@@ -179,6 +185,13 @@ function registerAuthUsersRoutes(app, deps) {
           if (!email) return res.status(400).json({ error: "email_cannot_be_empty" });
           values.push(email);
           updates.push(`email = $${values.length}`);
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body, "username")) {
+          const username = normalizeUsername(req.body.username);
+          if (!username) return res.status(400).json({ error: "username_cannot_be_empty" });
+          if (!isValidUsername(username)) return res.status(400).json({ error: "invalid_username" });
+          values.push(username);
+          updates.push(`username = $${values.length}`);
         }
 
         let roleFromPayload = null;
@@ -253,7 +266,7 @@ function registerAuthUsersRoutes(app, deps) {
           UPDATE users
           SET ${updates.join(", ")}
           WHERE id = $${values.length}
-          RETURNING id, name, email, role, school_id, permissions, active, created_at, updated_at
+          RETURNING id, name, email, username, role, school_id, permissions, active, created_at, updated_at
           `,
           values
         );
@@ -273,7 +286,7 @@ function registerAuthUsersRoutes(app, deps) {
         });
         res.json(after);
       } catch (error) {
-        if (error?.code === "23505") return res.status(409).json({ error: "duplicate_email" });
+        if (error?.code === "23505") return res.status(409).json({ error: "duplicate_user_identifier" });
         console.error("PATCH /api/auth/users/:id error:", error);
         sendInternalError(res, "failed_to_update_user", error);
       }
@@ -296,7 +309,7 @@ function registerAuthUsersRoutes(app, deps) {
       try {
         const beforeResult = await pool.query(
           `
-          SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+          SELECT u.id, u.name, u.email, u.username, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                  s.name AS school_name
           FROM users u
           LEFT JOIN schools s ON s.id = u.school_id
@@ -349,7 +362,7 @@ function registerAuthUsersRoutes(app, deps) {
       try {
         const beforeResult = await pool.query(
           `
-          SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+          SELECT u.id, u.name, u.email, u.username, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                  s.name AS school_name
           FROM users u
           LEFT JOIN schools s ON s.id = u.school_id
@@ -378,7 +391,7 @@ function registerAuthUsersRoutes(app, deps) {
           SET active = FALSE,
               updated_at = NOW()
           WHERE id = $1
-          RETURNING id, name, email, role, school_id, permissions, active, created_at, updated_at
+          RETURNING id, name, email, username, role, school_id, permissions, active, created_at, updated_at
           `,
           [userId]
         );

@@ -24,6 +24,7 @@ function buildUserRow(overrides = {}) {
     id: overrides.id || 1,
     name: overrides.name || "Test User",
     email: overrides.email || "user@example.com",
+    username: overrides.username || "usuario.teste",
     role: overrides.role || "admin_escola",
     school_id: overrides.school_id !== undefined ? overrides.school_id : 1,
     permissions: overrides.permissions || {},
@@ -80,7 +81,7 @@ describe("API security and permission flows", () => {
 
     installPoolMock(async (sql, params) => {
       const text = String(sql);
-      if (text.includes("WHERE u.email = $1 AND u.active = TRUE")) {
+      if (text.includes("LOWER(u.email) = $1")) {
         return {
           rowCount: 1,
           rows: [
@@ -223,6 +224,13 @@ describe("API security and permission flows", () => {
     expect(normalized.features.config_backup_preview).toBe(true);
   });
 
+  test("username helpers normalize and reject unsupported characters", () => {
+    expect(__testUtils.normalizeUsername("  ADMIN.TESTE  ")).toBe("admin.teste");
+    expect(__testUtils.isValidUsername("admin.teste")).toBe(true);
+    expect(__testUtils.isValidUsername("admin_teste")).toBe(false);
+    expect(__testUtils.isValidUsername("admin1")).toBe(false);
+  });
+
   test("getAuthToken reads bearer first and cookie as fallback", () => {
     const cookieOnly = getAuthToken({
       headers: { cookie: "sinaltech_auth=cookie-token; sinaltech_csrf=csrf-value" },
@@ -243,7 +251,7 @@ describe("API security and permission flows", () => {
 
     installPoolMock(async (sql) => {
       const text = String(sql);
-      if (text.includes("WHERE u.email = $1 AND u.active = TRUE")) {
+      if (text.includes("LOWER(u.email) = $1")) {
         return {
           rowCount: 1,
           rows: [
@@ -291,6 +299,44 @@ describe("API security and permission flows", () => {
     expect(loginResponse.status).toBe(200);
     expect(response.status).toBe(200);
     expect(response.body.user.email).toBe("cookie@teste.com");
+  });
+
+  test("POST /api/auth/login accepts username without @", async () => {
+    const password = "SenhaForte@123";
+    const hash = await bcrypt.hash(password, 12);
+
+    installPoolMock(async (sql, params) => {
+      const text = String(sql);
+      if (text.includes("LOWER(u.username) = $1")) {
+        expect(params).toEqual(["admin.teste"]);
+        return {
+          rowCount: 1,
+          rows: [
+            buildUserRow({
+              id: 33,
+              email: "admin@teste.com",
+              username: "admin.teste",
+              role: "superadmin",
+              school_id: null,
+              school_name: null,
+              password_hash: hash,
+            }),
+          ],
+        };
+      }
+      if (text.includes("INSERT INTO audit_logs")) {
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error(`Unexpected query in username login test: ${text.slice(0, 90)}`);
+    });
+
+    const response = await request(app).post("/api/auth/login").send({
+      email: "ADMIN.TESTE",
+      password,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user.username).toBe("admin.teste");
   });
 
   test("cookie-authenticated writes require csrf header", async () => {

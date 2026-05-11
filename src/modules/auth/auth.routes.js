@@ -20,6 +20,8 @@ function registerAuthRoutes(app, deps) {
     simulationTokenTtl,
     buildSimulationContext,
     sanitizeUser,
+    normalizeUsername,
+    isValidUsername,
     isStrongPassword,
     getPasswordPolicyDescription,
     bcrypt,
@@ -29,13 +31,13 @@ function registerAuthRoutes(app, deps) {
   } = deps;
 
   app.post("/api/auth/login", async (req, res) => {
-    const email = String(req.body?.email || "").trim().toLowerCase();
+    const identifier = String(req.body?.email || "").trim().toLowerCase();
     const password = String(req.body?.password || "");
-    const rateLimitKey = getLoginRateLimitKey(req, email);
+    const rateLimitKey = getLoginRateLimitKey(req, identifier);
     const rateLimitState = isLoginBlocked(rateLimitKey);
     const requestMeta = getRequestMeta(req);
 
-    if (!email || !password) return res.status(400).json({ error: "email_and_password_required" });
+    if (!identifier || !password) return res.status(400).json({ error: "identifier_and_password_required" });
     if (rateLimitState.blocked) {
       res.setHeader("retry-after", String(rateLimitState.retryAfterSeconds));
       return res.status(429).json({
@@ -45,16 +47,24 @@ function registerAuthRoutes(app, deps) {
     }
 
     try {
+      const loginField = identifier.includes("@") ? "email" : "username";
+      const loginValue = loginField === "username" ? normalizeUsername(identifier) : identifier;
+      if (loginField === "username" && !isValidUsername(loginValue)) {
+        registerFailedLoginAttempt(rateLimitKey);
+        return res.status(401).json({ error: "invalid_credentials" });
+      }
+
       const result = await pool.query(
         `
-        SELECT u.id, u.name, u.email, u.password_hash, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+        SELECT u.id, u.name, u.email, u.username, u.password_hash, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                s.name AS school_name, s.active AS school_active
         FROM users u
         LEFT JOIN schools s ON s.id = u.school_id
-        WHERE u.email = $1 AND u.active = TRUE
+        WHERE ${loginField === "email" ? "LOWER(u.email)" : "LOWER(u.username)"} = $1
+          AND u.active = TRUE
         LIMIT 1
         `,
-        [email]
+        [loginValue]
       );
 
       if (!result.rowCount) {
@@ -65,7 +75,7 @@ function registerAuthRoutes(app, deps) {
           action: "login_failed",
           resource: "auth",
           resourceId: null,
-          afterData: { email, reason: "user_not_found_or_inactive" },
+          afterData: { identifier, loginField, reason: "user_not_found_or_inactive" },
           ip: requestMeta.ip,
           userAgent: requestMeta.userAgent,
           meta: { requestId: requestMeta.requestId },
@@ -83,7 +93,7 @@ function registerAuthRoutes(app, deps) {
           action: "login_failed",
           resource: "auth",
           resourceId: String(user.id || ""),
-          afterData: { email, reason: "invalid_password" },
+          afterData: { identifier, loginField, reason: "invalid_password" },
           ip: requestMeta.ip,
           userAgent: requestMeta.userAgent,
           meta: { requestId: requestMeta.requestId },
@@ -106,7 +116,7 @@ function registerAuthRoutes(app, deps) {
         action: "login",
         resource: "auth",
         resourceId: String(user.id),
-        afterData: { email: user.email, role: user.role },
+        afterData: { email: user.email, username: user.username || null, loginField, role: user.role },
         ip: meta.ip,
         userAgent: meta.userAgent,
         meta: { requestId: meta.requestId },
@@ -115,7 +125,8 @@ function registerAuthRoutes(app, deps) {
     } catch (error) {
       logStructured("error", "auth_login_failed", {
         requestId: req.requestId || null,
-        email,
+        identifier,
+        loginField,
         error: serializeError(error),
       });
       return sendInternalError(res, "failed_to_login", error);
@@ -145,7 +156,7 @@ function registerAuthRoutes(app, deps) {
       try {
         const targetResult = await pool.query(
           `
-          SELECT u.id, u.name, u.email, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
+          SELECT u.id, u.name, u.email, u.username, u.role, u.school_id, u.permissions, u.active, u.created_at, u.updated_at,
                  s.name AS school_name, s.active AS school_active
           FROM users u
           LEFT JOIN schools s ON s.id = u.school_id
@@ -227,7 +238,7 @@ function registerAuthRoutes(app, deps) {
     try {
       const userResult = await pool.query(
         `
-        SELECT id, email, password_hash, school_id
+        SELECT id, email, username, password_hash, school_id
         FROM users
         WHERE id = $1 AND active = TRUE
         LIMIT 1

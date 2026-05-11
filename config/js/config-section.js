@@ -547,6 +547,7 @@
   const userEditId = document.getElementById("userEditId");
   const userNameInput = document.getElementById("userNameInput");
   const userEmailInput = document.getElementById("userEmailInput");
+  const userUsernameInput = document.getElementById("userUsernameInput");
   const userPasswordInput = document.getElementById("userPasswordInput");
   const userRoleInput = document.getElementById("userRoleInput");
   const userSchoolSelect = document.getElementById("userSchoolSelect");
@@ -593,6 +594,7 @@
   const loginSubmitBtn = document.getElementById("loginSubmitBtn");
   const toggleLoginPasswordBtn = document.getElementById("toggleLoginPassword");
   const authUserBadge = document.getElementById("authUserBadge");
+  const authUserDropdown = document.getElementById("authUserDropdown");
   const authUserName = document.getElementById("authUserName");
   const authUserRole = document.getElementById("authUserRole");
   const authUserIcon = document.getElementById("authUserIcon");
@@ -796,6 +798,14 @@
       [ROLE_SOMENTE_LEITURA]: "Somente Leitura",
     };
     return labels[role] || "Perfil";
+  }
+
+  function normalizeUsername(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function isValidUsername(value) {
+    return /^(?=.*[a-z])[a-z.]+$/.test(normalizeUsername(value));
   }
 
   function isSuperAdmin() {
@@ -1127,6 +1137,18 @@
     applyPermissions();
   }
 
+  function closeAuthUserDropdown() {
+    authUserDropdown?.classList.add("hidden");
+    authUserBadge?.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleAuthUserDropdown() {
+    if (!authUserBadge || !authUserDropdown || !currentUser) return;
+    const isOpen = !authUserDropdown.classList.contains("hidden");
+    authUserDropdown.classList.toggle("hidden", isOpen);
+    authUserBadge.setAttribute("aria-expanded", String(!isOpen));
+  }
+
   function updateUserBadge() {
     if (
       !authUserBadge ||
@@ -1142,8 +1164,7 @@
     if (!currentUser) {
       authUserBadge.classList.add("hidden");
       authUserBadge.classList.remove("inline-flex");
-      changePasswordBtn.classList.add("hidden");
-      logoutBtn.classList.add("hidden");
+      closeAuthUserDropdown();
       return;
     }
 
@@ -1158,10 +1179,6 @@
 
     authUserBadge.classList.remove("hidden");
     authUserBadge.classList.add("inline-flex");
-    changePasswordBtn.classList.remove("hidden");
-    changePasswordBtn.classList.add("inline-flex");
-    logoutBtn.classList.remove("hidden");
-    logoutBtn.classList.add("inline-flex");
   }
 
   function showAuthOverlay() {
@@ -2789,6 +2806,7 @@
 
   function openChangePasswordModal() {
     if (!changePasswordModal || !changePasswordModalContent || !changePasswordForm) return;
+    closeAuthUserDropdown();
     changePasswordForm.reset();
     changePasswordModal.classList.remove("hidden");
     changePasswordModal.classList.add("flex");
@@ -3259,6 +3277,7 @@
     if (userEditId) userEditId.value = String(user.id);
     if (userNameInput) userNameInput.value = user.name || "";
     if (userEmailInput) userEmailInput.value = user.email || "";
+    if (userUsernameInput) userUsernameInput.value = user.username || "";
     if (userPasswordInput) {
       userPasswordInput.value = "";
       userPasswordInput.required = false;
@@ -3293,7 +3312,7 @@
     if (!canManageUsers()) {
       usersTableBody.innerHTML = `
         <tr>
-          <td colspan="6" class="py-6 text-center text-slate-400">
+          <td colspan="7" class="py-6 text-center text-slate-400">
             Sem permissao para gerenciar usuarios
           </td>
         </tr>
@@ -3304,7 +3323,7 @@
     if (!users.length) {
       usersTableBody.innerHTML = `
         <tr>
-          <td colspan="6" class="py-6 text-center text-slate-400">
+          <td colspan="7" class="py-6 text-center text-slate-400">
             Nenhum usuario encontrado
           </td>
         </tr>
@@ -3336,7 +3355,8 @@
 
       tr.innerHTML = `
         <td class="px-4 py-3 font-medium">${escapeHtml(user.name || "-")}</td>
-        <td class="px-4 py-3">${escapeHtml(user.email || "-")}</td>
+          <td class="px-4 py-3">${escapeHtml(user.username || "-")}</td>
+          <td class="px-4 py-3">${escapeHtml(user.email || "-")}</td>
         <td class="px-4 py-3">${escapeHtml(formatRoleLabel(user.role))}</td>
         <td class="px-4 py-3">${escapeHtml(schoolName)}</td>
         <td class="px-4 py-3">
@@ -3414,7 +3434,7 @@
     }
     if (tabCache.users.promise && !options.force) return tabCache.users.promise;
 
-    renderLoadingRow(usersTableBody, 6, "Carregando usuarios...");
+    renderLoadingRow(usersTableBody, 7, "Carregando usuarios...");
 
     tabCache.users.promise = (async () => {
       const res = await apiFetch(`${API_BASE}/auth/users`);
@@ -3440,7 +3460,7 @@
       buildAuditUserFilter();
       usersTableBody.innerHTML = `
         <tr>
-          <td colspan="6" class="py-6 text-center text-red-600">
+          <td colspan="7" class="py-6 text-center text-red-600">
             Erro ao carregar usuarios
           </td>
         </tr>
@@ -3459,6 +3479,7 @@
     if (
       !userNameInput ||
       !userEmailInput ||
+      !userUsernameInput ||
       !userPasswordInput ||
       !userRoleInput ||
       !userSchoolSelect ||
@@ -3485,6 +3506,7 @@
     }
     const name = userNameInput.value.trim();
     const email = userEmailInput.value.trim().toLowerCase();
+    const username = normalizeUsername(userUsernameInput.value);
     const password = userPasswordInput.value;
     const role = userRoleInput.value;
 
@@ -3493,8 +3515,13 @@
       return;
     }
 
-    if (!name || !email) {
-      alert("Informe nome e email.");
+    if (!name || !email || !username) {
+      alert("Informe nome, email e nome de usuario.");
+      return;
+    }
+
+    if (!isValidUsername(username)) {
+      alert("Nome de usuario deve conter apenas letras minusculas e ponto.");
       return;
     }
 
@@ -3506,6 +3533,7 @@
     const payload = {
       name,
       email,
+      username,
       role,
       active: userActiveInput.checked,
     };
@@ -5391,10 +5419,10 @@
     event.preventDefault();
     showLoginError("");
 
-    const email = String(loginEmail?.value || "").trim().toLowerCase();
+    const identifier = String(loginEmail?.value || "").trim().toLowerCase();
     const password = String(loginPassword?.value || "");
-    if (!email || !password) {
-      showLoginError("Informe email e senha.");
+    if (!identifier || !password) {
+      showLoginError("Informe email ou usuario e senha.");
       return;
     }
 
@@ -5405,7 +5433,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: identifier, password }),
       });
 
       if (!res.ok) {
@@ -5418,10 +5446,14 @@
       setAuthSession(data.token || "", data.user);
       setCurrentUser(data.user);
       hideAuthOverlay();
-      await loadSchools();
-      await loadDashboardMonitorInfo({ force: true });
       switchSection("dashboard");
       broadcastAuthChanged(true);
+      try {
+        await loadSchools();
+        await loadDashboardMonitorInfo({ force: true });
+      } catch (loadError) {
+        console.error("Erro ao carregar dados iniciais apos login:", loadError);
+      }
       if (loginForm) loginForm.reset();
     } catch (err) {
       console.error("Erro no login:", err);
@@ -5442,8 +5474,11 @@
       const data = await res.json();
       setCurrentUser(data.user);
       hideAuthOverlay();
+      switchSection("dashboard");
       broadcastAuthChanged(true);
-      await loadDashboardMonitorInfo({ force: true });
+      await loadDashboardMonitorInfo({ force: true }).catch((loadError) => {
+        console.error("Erro ao carregar monitoramento da sessao:", loadError);
+      });
       return true;
     } catch (err) {
       console.error("Sessao invalida:", err);
@@ -5456,6 +5491,7 @@
   }
 
   async function logout() {
+    closeAuthUserDropdown();
     await apiFetch(`${API_BASE}/auth/logout`, { method: "POST", allow401: true }).catch((error) => {
       console.error("Erro ao encerrar sessao no servidor:", error);
     });
@@ -5612,6 +5648,17 @@
       if (canFilterDashboardHttpMetrics()) loadDashboardMonitorInfo({ force: true });
     });
 
+    authUserBadge?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleAuthUserDropdown();
+    });
+    authUserDropdown?.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    document.addEventListener("click", closeAuthUserDropdown);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeAuthUserDropdown();
+    });
     changePasswordBtn?.addEventListener("click", openChangePasswordModal);
     cancelChangePasswordBtn?.addEventListener("click", closeChangePasswordModal);
     changePasswordForm?.addEventListener("submit", handleChangePasswordSubmit);
@@ -5620,6 +5667,9 @@
     toggleLoginPasswordBtn?.addEventListener("click", toggleLoginPasswordVisibility);
     loginEmail?.addEventListener("input", () => showLoginError(""));
     loginPassword?.addEventListener("input", () => showLoginError(""));
+    userUsernameInput?.addEventListener("input", () => {
+      userUsernameInput.value = normalizeUsername(userUsernameInput.value).replace(/[^a-z.]/g, "");
+    });
     logoutBtn?.addEventListener("click", logout);
     exitSimulationBtn?.addEventListener("click", exitSimulation);
 
@@ -5652,9 +5702,13 @@
 
     const authenticated = await restoreSession();
     if (authenticated) {
-      await loadSchools();
-      await loadDashboardMonitorInfo();
       switchSection("dashboard");
+      await loadSchools().catch((loadError) => {
+        console.error("Erro ao carregar escolas da sessao:", loadError);
+      });
+      await loadDashboardMonitorInfo().catch((loadError) => {
+        console.error("Erro ao carregar dashboard da sessao:", loadError);
+      });
     } else {
       switchSection("dashboard");
     }

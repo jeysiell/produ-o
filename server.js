@@ -166,6 +166,7 @@ function sanitizeUser(row) {
     id: row.id,
     name: row.name,
     email: row.email,
+    username: row.username || null,
     role: row.role,
     schoolId: row.school_id || null,
     schoolName: row.school_name || null,
@@ -701,6 +702,14 @@ function signAccessToken(payload, expiresIn = JWT_EXPIRES_IN) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn });
 }
 
+function normalizeUsername(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isValidUsername(value) {
+  return /^(?=.*[a-z])[a-z.]+$/.test(normalizeUsername(value));
+}
+
 function buildSimulationContext(actorUser, options = {}) {
   return {
     active: true,
@@ -785,6 +794,7 @@ async function ensureEnterpriseSchema() {
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) NOT NULL UNIQUE,
+        username VARCHAR(80),
         password_hash TEXT NOT NULL,
         role VARCHAR(30) NOT NULL CHECK (role IN ('superadmin','admin_escola','somente_leitura')),
         school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
@@ -798,6 +808,17 @@ async function ensureEnterpriseSchema() {
     await client.query(`
       ALTER TABLE users
       ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb
+    `);
+
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS username VARCHAR(80)
+    `);
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower
+      ON users (LOWER(username))
+      WHERE username IS NOT NULL AND username <> ''
     `);
 
     const usersWithPermissions = await client.query(`
@@ -997,10 +1018,16 @@ async function seedDefaultSuperAdmin() {
   const passwordHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 12);
   await pool.query(
     `
-    INSERT INTO users (name, email, password_hash, role, school_id, active)
-    VALUES ($1, $2, $3, $4, NULL, TRUE)
+    INSERT INTO users (name, email, username, password_hash, role, school_id, active)
+    VALUES ($1, $2, $3, $4, $5, NULL, TRUE)
     `,
-    [DEFAULT_ADMIN_NAME, DEFAULT_ADMIN_EMAIL.toLowerCase(), passwordHash, ROLE_SUPERADMIN]
+    [
+      DEFAULT_ADMIN_NAME,
+      DEFAULT_ADMIN_EMAIL.toLowerCase(),
+      normalizeUsername(DEFAULT_ADMIN_EMAIL.split("@")[0]).replace(/[^a-z.]/g, "") || "admin",
+      passwordHash,
+      ROLE_SUPERADMIN,
+    ]
   );
 
   console.log("Default superadmin created.");
@@ -1032,6 +1059,8 @@ registerAuthRoutes(app, {
   simulationTokenTtl: SIMULATION_TOKEN_TTL,
   buildSimulationContext,
   sanitizeUser,
+  normalizeUsername,
+  isValidUsername,
   isStrongPassword,
   getPasswordPolicyDescription,
   bcrypt,
@@ -1050,6 +1079,8 @@ registerAuthUsersRoutes(app, {
   assignableRoles: ASSIGNABLE_ROLES,
   toIntId,
   normalizePermissionsPayload,
+  normalizeUsername,
+  isValidUsername,
   sanitizeUser,
   isStrongPassword,
   getPasswordPolicyDescription,
@@ -1288,7 +1319,12 @@ module.exports = {
   app,
   initializeApp,
   pool,
-  __testUtils: { normalizeSchedulePayload, normalizeStoredPermissionsForRole },
+  __testUtils: {
+    normalizeSchedulePayload,
+    normalizeStoredPermissionsForRole,
+    normalizeUsername,
+    isValidUsername,
+  },
 };
 
 
